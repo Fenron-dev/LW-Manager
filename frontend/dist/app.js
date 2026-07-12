@@ -4,6 +4,9 @@ let libraryPage = 1;
 let libraryTotal = 0;
 let libraryPageSize = 50;
 let extensionsLoaded = false;
+let activeSnapshot = 0;
+let archivePage = 1;
+let archivePages = 1;
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -197,11 +200,18 @@ async function loadDrives() {
     const files = document.createElement('span');
     files.className = 'drive-cell';
     files.textContent = `${drive.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(free)} frei`;
+    const actions = document.createElement('div');
+    actions.className = 'drive-row-actions';
+    const history = document.createElement('button');
+    history.className = 'secondary compact';
+    history.textContent = 'Archivstände';
+    history.addEventListener('click', (event) => { event.stopPropagation(); openArchiveDialog(drive); });
     const edit = document.createElement('button');
     edit.className = 'secondary compact';
     edit.textContent = 'Bearbeiten';
     edit.addEventListener('click', (event) => { event.stopPropagation(); openDriveDialog(drive); });
-    row.append(identity, kind, capacity, files, edit);
+    actions.append(history, edit);
+    row.append(identity, kind, capacity, files, actions);
     const treePanel = document.createElement('div');
     treePanel.className = 'drive-tree-panel hidden';
     row.addEventListener('click', async () => {
@@ -219,6 +229,79 @@ async function loadDrives() {
     list.append(row, treePanel);
   }
   filter.value = [...filter.options].some((option) => option.value === selectedDrive) ? selectedDrive : '0';
+}
+
+async function openArchiveDialog(drive) {
+  $('#archive-dialog-title').textContent = driveName(drive);
+  $('#snapshot-list').classList.remove('hidden');
+  $('#archive-browser').classList.add('hidden');
+  $('#archive-dialog').showModal();
+  await loadSnapshots(drive.id);
+}
+
+async function loadSnapshots(driveID) {
+  const list = $('#snapshot-list');
+  list.textContent = 'Archivstände werden geladen …';
+  const snapshots = await window.go.main.App.GetDriveSnapshots(driveID);
+  list.replaceChildren();
+  if (!snapshots.length) {
+    const empty = document.createElement('div');
+    empty.className = 'tree-empty';
+    empty.textContent = 'Noch keine älteren Scan-Stände. Beim nächsten Scan wird der aktuelle Stand hier archiviert.';
+    list.append(empty);
+    return;
+  }
+  for (const snapshot of snapshots) {
+    const row = document.createElement('div');
+    row.className = 'snapshot-row';
+    const info = document.createElement('button');
+    info.type = 'button';
+    info.className = 'snapshot-open secondary';
+    info.textContent = `${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(snapshot.totalBytes)}`;
+    info.addEventListener('click', () => openSnapshot(snapshot.id));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'snapshot-delete';
+    remove.textContent = 'Löschen';
+    remove.addEventListener('click', async () => {
+      if (!confirm(`Archivstand vom ${formatDate(snapshot.capturedAt)} wirklich unwiderruflich löschen?`)) return;
+      await window.go.main.App.DeleteSnapshot(snapshot.id);
+      await loadSnapshots(driveID);
+    });
+    row.append(info, remove);
+    list.append(row);
+  }
+}
+
+async function openSnapshot(snapshotID) {
+  activeSnapshot = snapshotID;
+  archivePage = 1;
+  $('#snapshot-list').classList.add('hidden');
+  $('#archive-browser').classList.remove('hidden');
+  await loadArchiveFiles();
+}
+
+async function loadArchiveFiles(page = archivePage) {
+  archivePage = Math.max(1, page);
+  const result = await window.go.main.App.SearchSnapshot(activeSnapshot, $('#archive-search').value, archivePage);
+  archivePages = Math.max(1, Math.ceil(result.total / result.pageSize));
+  $('#archive-meta').textContent = `${result.total.toLocaleString('de-DE')} archivierte Dateien · Seite ${archivePage} von ${archivePages}`;
+  const list = $('#archive-files');
+  list.replaceChildren();
+  for (const file of result.files) {
+    const row = document.createElement('div');
+    row.className = 'archive-file';
+    const name = document.createElement('strong');
+    name.textContent = file.filename;
+    const path = document.createElement('span');
+    path.textContent = file.path;
+    const size = document.createElement('span');
+    size.textContent = formatBytes(file.size);
+    row.append(name, path, size);
+    list.append(row);
+  }
+  $('#archive-previous').disabled = archivePage <= 1;
+  $('#archive-next').disabled = archivePage >= archivePages;
 }
 
 async function createDirectoryLevel(driveID, directory, depth, driveLabel) {
@@ -343,4 +426,9 @@ $('#drive-filter').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
 $('#save-drive-button').addEventListener('click', saveDrive);
+$('#archive-back').addEventListener('click', () => { $('#snapshot-list').classList.remove('hidden'); $('#archive-browser').classList.add('hidden'); });
+$('#archive-search-button').addEventListener('click', () => loadArchiveFiles(1));
+$('#archive-search').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadArchiveFiles(1); } });
+$('#archive-previous').addEventListener('click', () => loadArchiveFiles(archivePage - 1));
+$('#archive-next').addEventListener('click', () => loadArchiveFiles(archivePage + 1));
 loadInfo().then(loadDrives);

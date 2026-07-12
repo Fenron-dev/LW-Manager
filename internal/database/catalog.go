@@ -71,6 +71,29 @@ type SourceFile struct {
 	Size                     int64
 }
 
+type Snapshot struct {
+	ID         int64  `json:"id"`
+	CapturedAt string `json:"capturedAt"`
+	FileCount  int64  `json:"fileCount"`
+	TotalBytes int64  `json:"totalBytes"`
+}
+
+type ArchivedFile struct {
+	Filename  string `json:"filename"`
+	Path      string `json:"path"`
+	Extension string `json:"extension"`
+	MIMEType  string `json:"mimeType"`
+	Modified  string `json:"modified"`
+	Size      int64  `json:"size"`
+}
+
+type ArchiveResult struct {
+	Files    []ArchivedFile `json:"files"`
+	Total    int64          `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"pageSize"`
+}
+
 func Open(path string) (*Catalog, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -256,6 +279,67 @@ func (c *Catalog) SourceFile(id int64) (SourceFile, error) {
 	return source, nil
 }
 
+func (c *Catalog) Snapshots(driveID int64) ([]Snapshot, error) {
+	rows, err := c.db.Query(`SELECT id,captured_at,file_count,total_bytes FROM scan_snapshots WHERE drive_id=? ORDER BY captured_at DESC,id DESC`, driveID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]Snapshot, 0)
+	for rows.Next() {
+		var snapshot Snapshot
+		if err := rows.Scan(&snapshot.ID, &snapshot.CapturedAt, &snapshot.FileCount, &snapshot.TotalBytes); err != nil {
+			return nil, err
+		}
+		result = append(result, snapshot)
+	}
+	return result, rows.Err()
+}
+
+func (c *Catalog) DeleteSnapshot(id int64) error {
+	result, err := c.db.Exec("DELETE FROM scan_snapshots WHERE id=?", id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("Archivstand %d wurde nicht gefunden", id)
+	}
+	return nil
+}
+
+func (c *Catalog) SearchArchive(snapshotID int64, query string, page, pageSize int) (ArchiveResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 200 {
+		pageSize = 100
+	}
+	pattern := "%" + escapeLike(strings.TrimSpace(query)) + "%"
+	args := []any{snapshotID, pattern, pattern}
+	result := ArchiveResult{Files: make([]ArchivedFile, 0), Page: page, PageSize: pageSize}
+	where := `snapshot_id=? AND (LOWER(filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(path) LIKE LOWER(?) ESCAPE '\')`
+	if err := c.db.QueryRow("SELECT COUNT(*) FROM archived_files WHERE "+where, args...).Scan(&result.Total); err != nil {
+		return result, err
+	}
+	rows, err := c.db.Query(`SELECT filename,path,COALESCE(extension,''),size,COALESCE(mime_type,''),COALESCE(modified_at,'') FROM archived_files WHERE `+where+` ORDER BY filename COLLATE NOCASE,path LIMIT ? OFFSET ?`, append(args, pageSize, (page-1)*pageSize)...)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var file ArchivedFile
+		if err := rows.Scan(&file.Filename, &file.Path, &file.Extension, &file.Size, &file.MIMEType, &file.Modified); err != nil {
+			return result, err
+		}
+		result.Files = append(result.Files, file)
+	}
+	return result, rows.Err()
+}
+
 func (c *Catalog) migrate() error {
 	columns := map[string]string{
 		"display_name": "TEXT", "inventory_number": "TEXT", "manufacturer": "TEXT", "device_type": "TEXT",
@@ -313,6 +397,24 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 	var driveID int64
 	if err = tx.QueryRow("SELECT id FROM drives WHERE uuid=?", uuid).Scan(&driveID); err != nil {
 		return err
+	}
+	var previousCount, previousBytes int64
+	if err = tx.QueryRow("SELECT COUNT(*),COALESCE(SUM(size),0) FROM files WHERE drive_id=?", driveID).Scan(&previousCount, &previousBytes); err != nil {
+		return err
+	}
+	if previousCount > 0 {
+		result, err := tx.Exec("INSERT INTO scan_snapshots(drive_id,file_count,total_bytes) VALUES(?,?,?)", driveID, previousCount, previousBytes)
+		if err != nil {
+			return err
+		}
+		snapshotID, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO archived_files(snapshot_id,path,filename,extension,size,mime_type,modified_at)
+			SELECT ?,path,filename,extension,size,mime_type,modified_at FROM files WHERE drive_id=?`, snapshotID, driveID); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.Exec("DELETE FROM files WHERE drive_id=?", driveID); err != nil {
 		return err

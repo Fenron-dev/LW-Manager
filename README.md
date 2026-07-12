@@ -2,6 +2,8 @@
 
 Portable Desktop-Anwendung zur Katalogisierung externer Datenträger. Der aktuelle Stand umfasst die Wails-Oberfläche, sichere Vault-Pfadlogik, einen rekursiven Metadaten-Scanner, den portablen SQLite-Katalog, eine durchsuchbare Bibliothek und vollständig cloudbasierte Builds.
 
+Bei einem erneuten Scan ersetzt VaultApp den aktiven Katalog vollständig durch den aktuellen Inhalt der Quelle. Der vorherige Stand wird als löschbarer Archivstand gespeichert und erscheint nicht in der normalen Bibliothek.
+
 ## Builds ohne lokale Toolchain
 
 1. Repository zu GitHub pushen.

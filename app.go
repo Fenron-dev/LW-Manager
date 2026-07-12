@@ -76,7 +76,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.7.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.8.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -140,6 +140,27 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 		return "", err
 	}
 	return thumbnail.DataURL(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size))
+}
+
+func (a *App) GetDriveSnapshots(driveID int64) ([]database.Snapshot, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.Snapshots(driveID)
+}
+
+func (a *App) SearchSnapshot(snapshotID int64, query string, page int) (database.ArchiveResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return database.ArchiveResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.SearchArchive(snapshotID, query, page, 100)
+}
+
+func (a *App) DeleteSnapshot(snapshotID int64) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.DeleteSnapshot(snapshotID)
 }
 
 // SelectAndScan catalogs metadata only. Source files are never modified.
