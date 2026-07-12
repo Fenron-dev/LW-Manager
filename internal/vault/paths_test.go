@@ -29,3 +29,19 @@ func TestSafeJoinRejectsTraversal(t *testing.T) {
 		t.Fatalf("unexpected result: %q, %v", got, err)
 	}
 }
+
+func TestPortableRootFromMacOSBundle(t *testing.T) {
+	executable := filepath.Join("Volumes", "Vault", "VaultApp.app", "Contents", "MacOS", "VaultApp")
+	want := filepath.Join("Volumes", "Vault")
+	if got := portableRootFromExecutable(executable); got != want {
+		t.Fatalf("portableRootFromExecutable() = %q, want %q", got, want)
+	}
+}
+
+func TestPortableRootFromDirectBinary(t *testing.T) {
+	executable := filepath.Join("media", "Vault", "VaultApp")
+	want := filepath.Join("media", "Vault")
+	if got := portableRootFromExecutable(executable); got != want {
+		t.Fatalf("portableRootFromExecutable() = %q, want %q", got, want)
+	}
+}

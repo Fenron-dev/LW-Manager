@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const Marker = ".vaultapp"
@@ -12,7 +13,9 @@ const Marker = ".vaultapp"
 // the working directory. A marker prevents accidentally treating arbitrary
 // parent directories as a vault.
 func ResolveRoot() (string, error) {
+	var executable string
 	if exe, err := os.Executable(); err == nil {
+		executable = exe
 		if root := findRoot(filepath.Dir(exe)); root != "" {
 			return root, nil
 		}
@@ -24,11 +27,29 @@ func ResolveRoot() (string, error) {
 		if root := findRoot(cwd); root != "" {
 			return root, nil
 		}
-		// Development and first-run fallback. The directory becomes explicit as
-		// soon as EnsureLayout writes the marker.
-		return cwd, nil
+	}
+	// Finder starts macOS applications with "/" as their working directory.
+	// Derive the portable folder from the bundle in that case. Direct Windows
+	// and Linux binaries use the directory containing the executable.
+	if executable != "" {
+		return portableRootFromExecutable(executable), nil
 	}
 	return "", errors.New("Vault-Stammverzeichnis wurde nicht gefunden")
+}
+
+func portableRootFromExecutable(executable string) string {
+	current := filepath.Dir(filepath.Clean(executable))
+	for {
+		if strings.HasSuffix(strings.ToLower(filepath.Base(current)), ".app") {
+			return filepath.Dir(current)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	return filepath.Dir(filepath.Clean(executable))
 }
 
 func findRoot(start string) string {
