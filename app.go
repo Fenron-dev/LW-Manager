@@ -77,7 +77,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.11.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.12.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -222,8 +222,13 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 		return ScanResult{}, err
 	}
 	totalSize, usedSize, _ := storage.Usage(selected)
+	identity, _ := storage.Identify(selected)
+	label := filepath.Base(filepath.Clean(selected))
+	if identity.Label != "" {
+		label = identity.Label
+	}
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected})
-	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: filepath.Base(filepath.Clean(selected)), Files: report.Files, TotalSize: totalSize, UsedSize: usedSize}); err != nil {
+	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Model: identity.Model}); err != nil {
 		return ScanResult{}, err
 	}
 	result := ScanResult{Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Message: "Scan erfolgreich gespeichert"}

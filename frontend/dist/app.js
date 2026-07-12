@@ -212,7 +212,7 @@ async function loadDrives() {
     identity.append(heading, source);
     const kind = document.createElement('span');
     kind.className = 'drive-cell';
-    kind.textContent = [drive.manufacturer, drive.deviceType].filter(Boolean).join(' · ') || 'Nicht klassifiziert';
+    kind.textContent = [drive.manufacturer || drive.model, drive.deviceType, drive.fsType].filter(Boolean).join(' · ') || 'Nicht klassifiziert';
     const capacity = document.createElement('div');
     capacity.className = 'drive-capacity';
     const free = Math.max(0, drive.totalSize - drive.usedSize);

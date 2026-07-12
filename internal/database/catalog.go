@@ -24,6 +24,9 @@ type DriveScan struct {
 	Files       []scanner.File
 	TotalSize   int64
 	UsedSize    int64
+	UUID        string
+	FSType      string
+	Model       string
 }
 
 type Drive struct {
@@ -35,6 +38,8 @@ type Drive struct {
 	Manufacturer    string `json:"manufacturer"`
 	DeviceType      string `json:"deviceType"`
 	StorageLocation string `json:"storageLocation"`
+	FSType          string `json:"fsType"`
+	Model           string `json:"model"`
 	TotalSize       int64  `json:"totalSize"`
 	UsedSize        int64  `json:"usedSize"`
 	FileCount       int64  `json:"fileCount"`
@@ -211,7 +216,7 @@ func (c *Catalog) Search(query, extension string, driveID int64, limit, offset i
 
 func (c *Catalog) Drives() ([]Drive, error) {
 	rows, err := c.db.Query(`SELECT d.id,d.label,COALESCE(d.display_name,''),COALESCE(d.inventory_number,''),COALESCE(d.vault_path,''),
-		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
+		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
 		FROM drives d LEFT JOIN files f ON f.drive_id=d.id GROUP BY d.id ORDER BY COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
@@ -220,7 +225,7 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	drives := make([]Drive, 0)
 	for rows.Next() {
 		var drive Drive
-		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
+		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
 			return nil, err
 		}
 		drives = append(drives, drive)
@@ -585,14 +590,25 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 	if err != nil {
 		return err
 	}
-	uuid := fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(absolute))))
+	uuid := strings.TrimSpace(scan.UUID)
+	if uuid == "" {
+		uuid = fmt.Sprintf("path:%x", sha256.Sum256([]byte(filepath.Clean(absolute))))
+	} else {
+		uuid = "volume:" + strings.ToLower(uuid)
+	}
 	tx, err := c.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`INSERT INTO drives(uuid,label,vault_path,total_size,used_size,updated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)
-		ON CONFLICT(uuid) DO UPDATE SET label=excluded.label,vault_path=excluded.vault_path,total_size=excluded.total_size,used_size=excluded.used_size,updated_at=CURRENT_TIMESTAMP`, uuid, scan.Label, absolute, scan.TotalSize, scan.UsedSize); err != nil {
+	if scan.UUID != "" {
+		_, err = tx.Exec(`UPDATE drives SET uuid=? WHERE vault_path=? AND uuid<>? AND NOT EXISTS(SELECT 1 FROM drives WHERE uuid=?)`, uuid, absolute, uuid, uuid)
+		if err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(`INSERT INTO drives(uuid,label,vault_path,total_size,used_size,fs_type,model,updated_at) VALUES(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+		ON CONFLICT(uuid) DO UPDATE SET label=excluded.label,vault_path=excluded.vault_path,total_size=excluded.total_size,used_size=excluded.used_size,fs_type=excluded.fs_type,model=excluded.model,updated_at=CURRENT_TIMESTAMP`, uuid, scan.Label, absolute, scan.TotalSize, scan.UsedSize, scan.FSType, scan.Model); err != nil {
 		return err
 	}
 	var driveID int64
