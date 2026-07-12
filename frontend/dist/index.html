@@ -9,7 +9,7 @@
 <body>
   <aside>
     <div class="brand"><span>V</span> VaultApp</div>
-    <nav><button id="nav-overview" class="active">Übersicht</button><button id="nav-scan">Scannen</button><button id="nav-library">Bibliothek</button><button>Datenträger</button></nav>
+    <nav><button id="nav-overview" class="active">Übersicht</button><button id="nav-scan">Scannen</button><button id="nav-library">Bibliothek</button><button id="nav-drives">Datenträger</button></nav>
     <button class="settings">Einstellungen</button>
   </aside>
   <main>
@@ -25,11 +25,16 @@
     </section>
     <section class="empty"><div class="disc">◎</div><h2 id="scan-title">Bereit für den ersten Scan</h2><p id="scan-detail">Wähle einen angeschlossenen Datenträger oder einen Ordner aus. Dateien werden nur gelesen, niemals verändert.</p><div class="progress" id="progress"><span></span></div><button id="scan-button">Datenträger oder Ordner scannen</button></section></div>
     <section id="library-view" class="library hidden">
-      <div class="searchbar"><input id="search-input" type="search" placeholder="Dateiname oder Pfad durchsuchen …" autocomplete="off"><select id="extension-filter"><option value="">Alle Dateitypen</option></select><button id="search-button">Suchen</button></div>
+      <div class="searchbar"><input id="search-input" type="search" placeholder="Dateiname oder Pfad durchsuchen …" autocomplete="off"><select id="drive-filter"><option value="0">Alle Datenträger</option></select><select id="extension-filter"><option value="">Alle Dateitypen</option></select><button id="search-button">Suchen</button></div>
       <div class="library-meta"><span id="result-count">Katalog wird geladen …</span><span id="page-label"></span></div>
-      <div class="file-table"><div class="file-row file-head"><span>Name</span><span>Quelle / Pfad</span><span>Typ</span><span>Größe</span><span>Geändert</span></div><div id="file-results"></div></div>
+      <div class="file-table"><div class="file-row file-head"><span>Name</span><span>Datenträger</span><span>Pfad</span><span>Typ</span><span>Größe</span><span>Geändert</span></div><div id="file-results"></div></div>
       <div id="library-empty" class="library-empty hidden">Keine passenden Dateien gefunden.</div>
       <div class="pagination"><button id="previous-page">← Zurück</button><button id="next-page">Weiter →</button></div>
+    </section>
+    <section id="drives-view" class="drives hidden">
+      <div class="drive-intro"><div><h2>Verwaltete Datenträger</h2><p>Name und Inventardaten kannst du frei ergänzen. Kapazität und Belegung werden beim Scan aktualisiert.</p></div><button id="drive-scan-button">Weiteren Datenträger scannen</button></div>
+      <div id="drive-list" class="drive-list"></div>
+      <div id="drives-empty" class="library-empty hidden">Noch keine Datenträger katalogisiert.</div>
     </section>
   </main>
   <script src="app.js"></script>

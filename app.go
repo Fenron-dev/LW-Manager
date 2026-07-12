@@ -9,6 +9,7 @@ import (
 
 	"github.com/dennis/vaultapp/internal/database"
 	"github.com/dennis/vaultapp/internal/scanner"
+	"github.com/dennis/vaultapp/internal/storage"
 	"github.com/dennis/vaultapp/internal/vault"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -74,7 +75,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.3.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.4.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -89,7 +90,7 @@ func (a *App) GetAppInfo() AppInfo {
 	return info
 }
 
-func (a *App) SearchFiles(query, extension string, page int) (LibraryResult, error) {
+func (a *App) SearchFiles(query, extension string, driveID int64, page int) (LibraryResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return LibraryResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
@@ -97,11 +98,25 @@ func (a *App) SearchFiles(query, extension string, page int) (LibraryResult, err
 		page = 1
 	}
 	const pageSize = 50
-	result, err := a.catalog.Search(query, extension, pageSize, (page-1)*pageSize)
+	result, err := a.catalog.Search(query, extension, driveID, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return LibraryResult{}, err
 	}
 	return LibraryResult{Files: result.Files, Extensions: result.Extensions, Total: result.Total, Page: page, PageSize: pageSize}, nil
+}
+
+func (a *App) GetDrives() ([]database.Drive, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.Drives()
+}
+
+func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType string) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType)
 }
 
 // SelectAndScan catalogs metadata only. Source files are never modified.
@@ -128,8 +143,9 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 	if err != nil {
 		return ScanResult{}, err
 	}
+	totalSize, usedSize, _ := storage.Usage(selected)
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected})
-	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: filepath.Base(filepath.Clean(selected)), Files: report.Files}); err != nil {
+	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: filepath.Base(filepath.Clean(selected)), Files: report.Files, TotalSize: totalSize, UsedSize: usedSize}); err != nil {
 		return ScanResult{}, err
 	}
 	result := ScanResult{Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Message: "Scan erfolgreich gespeichert"}

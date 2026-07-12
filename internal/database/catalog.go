@@ -20,6 +20,22 @@ type Catalog struct{ db *sql.DB }
 type DriveScan struct {
 	Path, Label string
 	Files       []scanner.File
+	TotalSize   int64
+	UsedSize    int64
+}
+
+type Drive struct {
+	ID              int64  `json:"id"`
+	Label           string `json:"label"`
+	DisplayName     string `json:"displayName"`
+	InventoryNumber string `json:"inventoryNumber"`
+	Path            string `json:"path"`
+	Manufacturer    string `json:"manufacturer"`
+	DeviceType      string `json:"deviceType"`
+	TotalSize       int64  `json:"totalSize"`
+	UsedSize        int64  `json:"usedSize"`
+	FileCount       int64  `json:"fileCount"`
+	UpdatedAt       string `json:"updatedAt"`
 }
 
 type FileResult struct {
@@ -49,7 +65,12 @@ func Open(path string) (*Catalog, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("Datenbankschema: %w", err)
 	}
-	return &Catalog{db: db}, nil
+	catalog := &Catalog{db: db}
+	if err := catalog.migrate(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("Datenbankmigration: %w", err)
+	}
+	return catalog, nil
 }
 func (c *Catalog) Close() error { return c.db.Close() }
 func (c *Catalog) Stats() (files, drives int64, err error) {
@@ -60,7 +81,7 @@ func (c *Catalog) Stats() (files, drives int64, err error) {
 	return
 }
 
-func (c *Catalog) Search(query, extension string, limit, offset int) (SearchResult, error) {
+func (c *Catalog) Search(query, extension string, driveID int64, limit, offset int) (SearchResult, error) {
 	if limit < 1 || limit > 100 {
 		limit = 50
 	}
@@ -69,13 +90,13 @@ func (c *Catalog) Search(query, extension string, limit, offset int) (SearchResu
 	}
 	pattern := "%" + escapeLike(strings.TrimSpace(query)) + "%"
 	extension = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(extension)), ".")
-	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\') AND (? = '' OR f.extension = ?)`
-	args := []any{pattern, pattern, extension, extension}
+	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\') AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?)`
+	args := []any{pattern, pattern, extension, extension, driveID, driveID}
 	result := SearchResult{Extensions: make([]string, 0)}
 	if err := c.db.QueryRow("SELECT COUNT(*) FROM files f WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := c.db.Query(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),d.label,f.size,COALESCE(f.modified_at,'')
+	rows, err := c.db.Query(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.modified_at,'')
 		FROM files f JOIN drives d ON d.id=f.drive_id WHERE `+where+` ORDER BY f.filename COLLATE NOCASE,f.path LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
 		return result, err
@@ -107,6 +128,75 @@ func (c *Catalog) Search(query, extension string, limit, offset int) (SearchResu
 	return result, extensionRows.Err()
 }
 
+func (c *Catalog) Drives() ([]Drive, error) {
+	rows, err := c.db.Query(`SELECT d.id,d.label,COALESCE(d.display_name,''),COALESCE(d.inventory_number,''),COALESCE(d.vault_path,''),
+		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
+		FROM drives d LEFT JOIN files f ON f.drive_id=d.id GROUP BY d.id ORDER BY COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	drives := make([]Drive, 0)
+	for rows.Next() {
+		var drive Drive
+		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
+			return nil, err
+		}
+		drives = append(drives, drive)
+	}
+	return drives, rows.Err()
+}
+
+func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType string) error {
+	result, err := c.db.Exec(`UPDATE drives SET display_name=?,inventory_number=?,manufacturer=?,device_type=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		strings.TrimSpace(displayName), strings.TrimSpace(inventoryNumber), strings.TrimSpace(manufacturer), strings.TrimSpace(deviceType), id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("Datenträger %d wurde nicht gefunden", id)
+	}
+	return nil
+}
+
+func (c *Catalog) migrate() error {
+	columns := map[string]string{
+		"display_name": "TEXT", "inventory_number": "TEXT", "manufacturer": "TEXT", "device_type": "TEXT",
+		"total_size": "INTEGER NOT NULL DEFAULT 0", "used_size": "INTEGER NOT NULL DEFAULT 0",
+	}
+	rows, err := c.db.Query("PRAGMA table_info(drives)")
+	if err != nil {
+		return err
+	}
+	existing := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, kind string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for name, definition := range columns {
+		if !existing[name] {
+			if _, err := c.db.Exec("ALTER TABLE drives ADD COLUMN " + name + " " + definition); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func escapeLike(value string) string {
 	value = strings.ReplaceAll(value, `\`, `\\`)
 	value = strings.ReplaceAll(value, `%`, `\%`)
@@ -123,8 +213,8 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`INSERT INTO drives(uuid,label,vault_path,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)
-		ON CONFLICT(uuid) DO UPDATE SET label=excluded.label,vault_path=excluded.vault_path,updated_at=CURRENT_TIMESTAMP`, uuid, scan.Label, absolute); err != nil {
+	if _, err = tx.Exec(`INSERT INTO drives(uuid,label,vault_path,total_size,used_size,updated_at) VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)
+		ON CONFLICT(uuid) DO UPDATE SET label=excluded.label,vault_path=excluded.vault_path,total_size=excluded.total_size,used_size=excluded.used_size,updated_at=CURRENT_TIMESTAMP`, uuid, scan.Label, absolute, scan.TotalSize, scan.UsedSize); err != nil {
 		return err
 	}
 	var driveID int64

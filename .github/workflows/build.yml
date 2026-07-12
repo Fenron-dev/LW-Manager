@@ -48,6 +48,10 @@ jobs:
           touch package/.vaultapp
           cp -R build/bin/* package/
           cp README.md package/
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            cp scripts/macos-start.command package/VaultApp-starten.command
+            chmod +x package/VaultApp-starten.command
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
