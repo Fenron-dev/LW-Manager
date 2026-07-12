@@ -94,6 +94,24 @@ type ArchiveResult struct {
 	PageSize int            `json:"pageSize"`
 }
 
+type ComparisonEntry struct {
+	Path            string `json:"path"`
+	Status          string `json:"status"`
+	CurrentName     string `json:"currentName"`
+	CurrentSize     int64  `json:"currentSize"`
+	CurrentModified string `json:"currentModified"`
+	ArchiveName     string `json:"archiveName"`
+	ArchiveSize     int64  `json:"archiveSize"`
+	ArchiveModified string `json:"archiveModified"`
+}
+
+type ComparisonResult struct {
+	Entries  []ComparisonEntry `json:"entries"`
+	Total    int64             `json:"total"`
+	Page     int               `json:"page"`
+	PageSize int               `json:"pageSize"`
+}
+
 func Open(path string) (*Catalog, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -336,6 +354,49 @@ func (c *Catalog) SearchArchive(snapshotID int64, query string, page, pageSize i
 			return result, err
 		}
 		result.Files = append(result.Files, file)
+	}
+	return result, rows.Err()
+}
+
+func (c *Catalog) CompareSnapshot(snapshotID int64, status, query string, page, pageSize int) (ComparisonResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 200 {
+		pageSize = 100
+	}
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "" && status != "added" && status != "removed" && status != "modified" && status != "unchanged" {
+		return ComparisonResult{}, fmt.Errorf("ungültiger Vergleichsfilter")
+	}
+	const comparison = `
+		SELECT f.path,
+		 CASE WHEN a.id IS NULL THEN 'added' WHEN f.size<>a.size OR COALESCE(f.modified_at,'')<>COALESCE(a.modified_at,'') THEN 'modified' ELSE 'unchanged' END status,
+		 f.filename current_name,f.size current_size,COALESCE(f.modified_at,'') current_modified,
+		 COALESCE(a.filename,'') archive_name,COALESCE(a.size,0) archive_size,COALESCE(a.modified_at,'') archive_modified
+		FROM files f JOIN scan_snapshots s ON s.id=? AND s.drive_id=f.drive_id LEFT JOIN archived_files a ON a.snapshot_id=s.id AND a.path=f.path
+		UNION ALL
+		SELECT a.path,'removed','',0,'',a.filename,a.size,COALESCE(a.modified_at,'')
+		FROM archived_files a JOIN scan_snapshots s ON s.id=a.snapshot_id LEFT JOIN files f ON f.drive_id=s.drive_id AND f.path=a.path
+		WHERE a.snapshot_id=? AND f.id IS NULL`
+	pattern := "%" + escapeLike(strings.TrimSpace(query)) + "%"
+	where := `(?='' OR status=?) AND LOWER(path) LIKE LOWER(?) ESCAPE '\'`
+	args := []any{snapshotID, snapshotID, status, status, pattern}
+	result := ComparisonResult{Entries: make([]ComparisonEntry, 0), Page: page, PageSize: pageSize}
+	if err := c.db.QueryRow("SELECT COUNT(*) FROM ("+comparison+") WHERE "+where, args...).Scan(&result.Total); err != nil {
+		return result, err
+	}
+	rows, err := c.db.Query("SELECT path,status,current_name,current_size,current_modified,archive_name,archive_size,archive_modified FROM ("+comparison+") WHERE "+where+" ORDER BY path COLLATE NOCASE LIMIT ? OFFSET ?", append(args, pageSize, (page-1)*pageSize)...)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var entry ComparisonEntry
+		if err := rows.Scan(&entry.Path, &entry.Status, &entry.CurrentName, &entry.CurrentSize, &entry.CurrentModified, &entry.ArchiveName, &entry.ArchiveSize, &entry.ArchiveModified); err != nil {
+			return result, err
+		}
+		result.Entries = append(result.Entries, entry)
 	}
 	return result, rows.Err()
 }

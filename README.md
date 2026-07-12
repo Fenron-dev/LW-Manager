@@ -4,6 +4,8 @@ Portable Desktop-Anwendung zur Katalogisierung externer Datenträger. Der aktuel
 
 Bei einem erneuten Scan ersetzt VaultApp den aktiven Katalog vollständig durch den aktuellen Inhalt der Quelle. Der vorherige Stand wird als löschbarer Archivstand gespeichert und erscheint nicht in der normalen Bibliothek.
 
+Der Tab **Archiv** vergleicht den aktuellen Inhalt mit einem wählbaren früheren Stand und markiert neue, entfernte, geänderte und unveränderte Pfade farblich.
+
 ## Builds ohne lokale Toolchain
 
 1. Repository zu GitHub pushen.

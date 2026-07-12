@@ -9,7 +9,7 @@
 <body>
   <aside>
     <div class="brand"><span>V</span> VaultApp</div>
-    <nav><button id="nav-overview" class="active">Übersicht</button><button id="nav-library">Bibliothek</button><button id="nav-drives">Datenträger</button></nav>
+    <nav><button id="nav-overview" class="active">Übersicht</button><button id="nav-library">Bibliothek</button><button id="nav-drives">Datenträger</button><button id="nav-archive">Archiv</button></nav>
     <button class="settings">Einstellungen</button>
   </aside>
   <main>
@@ -35,6 +35,13 @@
       <div class="drive-intro"><div><h2>Verwaltete Datenträger</h2><p>Name und Inventardaten kannst du frei ergänzen. Kapazität und Belegung werden beim Scan aktualisiert.</p></div><button id="drive-scan-button">Weiteren Datenträger scannen</button></div>
       <div id="drive-list" class="drive-list"></div>
       <div id="drives-empty" class="library-empty hidden">Noch keine Datenträger katalogisiert.</div>
+    </section>
+    <section id="archive-view" class="archive-view hidden">
+      <div class="compare-controls"><select id="compare-drive"><option value="0">Datenträger auswählen</option></select><select id="compare-snapshot"><option value="0">Archivstand auswählen</option></select><select id="compare-status"><option value="">Alle Unterschiede</option><option value="added">Nur neu</option><option value="removed">Nur entfernt</option><option value="modified">Nur geändert</option><option value="unchanged">Nur unverändert</option></select><input id="compare-query" type="search" placeholder="Pfad filtern …"><button id="compare-button">Vergleichen</button></div>
+      <div class="comparison-legend"><span class="status-added">Neu</span><span class="status-removed">Entfernt</span><span class="status-modified">Geändert</span><span class="status-unchanged">Unverändert</span></div>
+      <div id="comparison-meta" class="library-meta">Bitte Datenträger und Archivstand auswählen.</div>
+      <div class="comparison-table"><div class="comparison-row comparison-head"><span>Aktueller Stand</span><span>Status</span><span>Archivstand</span></div><div id="comparison-results"></div></div>
+      <div class="pagination"><button id="compare-previous">← Zurück</button><button id="compare-next">Weiter →</button></div>
     </section>
   </main>
   <dialog id="drive-dialog" class="modal"><form method="dialog"><div class="modal-head"><div><p class="eyebrow">DATENTRÄGER BEARBEITEN</p><h2 id="drive-dialog-title">Datenträger</h2></div><button class="modal-close" value="cancel" aria-label="Schließen">×</button></div><input id="edit-drive-id" type="hidden"><div class="modal-fields"><label>Eigener Name<input id="edit-display-name"></label><label>Inventarnummer<input id="edit-inventory-number"></label><label>Hersteller<input id="edit-manufacturer"></label><label>Bauart<select id="edit-device-type"><option value="">Nicht festgelegt</option><option>2,5″ HDD</option><option>2,5″ SSD</option><option>M.2 SATA SSD</option><option>M.2 NVMe SSD</option><option>USB-A Stick</option><option>USB-C Stick</option><option>SD-Karte</option><option>Sonstiges</option></select></label></div><p id="drive-dialog-path" class="modal-path"></p><div class="modal-actions"><span id="drive-save-status"></span><button value="cancel" class="secondary">Abbrechen</button><button id="save-drive-button" value="default">Speichern</button></div></form></dialog>

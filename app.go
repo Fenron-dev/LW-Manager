@@ -76,7 +76,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.8.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.9.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -161,6 +161,13 @@ func (a *App) DeleteSnapshot(snapshotID int64) error {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.DeleteSnapshot(snapshotID)
+}
+
+func (a *App) CompareSnapshot(snapshotID int64, status, query string, page int) (database.ComparisonResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return database.ComparisonResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.CompareSnapshot(snapshotID, status, query, page, 100)
 }
 
 // SelectAndScan catalogs metadata only. Source files are never modified.
