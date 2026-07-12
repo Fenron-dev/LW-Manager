@@ -57,12 +57,18 @@ type SearchResult struct {
 }
 
 type DirectoryEntry struct {
+	ID        int64  `json:"id"`
 	Name      string `json:"name"`
 	Path      string `json:"path"`
 	IsDir     bool   `json:"isDir"`
 	Size      int64  `json:"size"`
 	FileCount int64  `json:"fileCount"`
 	Extension string `json:"extension"`
+}
+
+type SourceFile struct {
+	Path, MIMEType, Modified string
+	Size                     int64
 }
 
 func Open(path string) (*Catalog, error) {
@@ -182,7 +188,7 @@ func (c *Catalog) Directory(driveID int64, directory string) ([]DirectoryEntry, 
 	if directory != "" {
 		prefix = directory + "/"
 	}
-	rows, err := c.db.Query(`SELECT path,size,COALESCE(extension,'') FROM files WHERE drive_id=? AND path LIKE ? ESCAPE '\' ORDER BY path`, driveID, escapeLike(prefix)+"%")
+	rows, err := c.db.Query(`SELECT id,path,size,COALESCE(extension,'') FROM files WHERE drive_id=? AND path LIKE ? ESCAPE '\' ORDER BY path`, driveID, escapeLike(prefix)+"%")
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +197,8 @@ func (c *Catalog) Directory(driveID int64, directory string) ([]DirectoryEntry, 
 	for rows.Next() {
 		var path, extension string
 		var size int64
-		if err := rows.Scan(&path, &size, &extension); err != nil {
+		var id int64
+		if err := rows.Scan(&id, &path, &size, &extension); err != nil {
 			return nil, err
 		}
 		remainder := strings.TrimPrefix(path, prefix)
@@ -202,12 +209,13 @@ func (c *Catalog) Directory(driveID int64, directory string) ([]DirectoryEntry, 
 		}
 		entry, exists := entries[name]
 		if !exists {
-			entry = &DirectoryEntry{Name: name, Path: prefix + name, IsDir: len(parts) == 2, Extension: extension}
+			entry = &DirectoryEntry{ID: id, Name: name, Path: prefix + name, IsDir: len(parts) == 2, Extension: extension}
 			entries[name] = entry
 		}
 		entry.Size += size
 		entry.FileCount++
 		if len(parts) == 2 {
+			entry.ID = 0
 			entry.IsDir = true
 			entry.Extension = ""
 		}
@@ -226,6 +234,26 @@ func (c *Catalog) Directory(driveID int64, directory string) ([]DirectoryEntry, 
 		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 	})
 	return result, nil
+}
+
+func (c *Catalog) SourceFile(id int64) (SourceFile, error) {
+	var source SourceFile
+	var root, relative string
+	err := c.db.QueryRow(`SELECT d.vault_path,f.path,COALESCE(f.mime_type,''),f.size,COALESCE(f.modified_at,'') FROM files f JOIN drives d ON d.id=f.drive_id WHERE f.id=?`, id).
+		Scan(&root, &relative, &source.MIMEType, &source.Size, &source.Modified)
+	if err != nil {
+		return source, err
+	}
+	if filepath.IsAbs(relative) {
+		return source, fmt.Errorf("ungültiger absoluter Dateipfad")
+	}
+	root = filepath.Clean(root)
+	source.Path = filepath.Join(root, filepath.FromSlash(relative))
+	inside, err := filepath.Rel(root, source.Path)
+	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		return SourceFile{}, fmt.Errorf("Dateipfad verlässt den Datenträger")
+	}
+	return source, nil
 }
 
 func (c *Catalog) migrate() error {

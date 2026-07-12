@@ -21,7 +21,7 @@ Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet re
 ## Roadmap
 
 - Hardware-Datenträger automatisch erkennen und eindeutig identifizieren
-- Thumbnails
+- weitere Vorschauformate (WebP, HEIC, PDF, Video)
 - optionale Duplikaterkennung per Inhalts-Hash
 - optionale lokale/entfernte KI-Anbieter
 

@@ -10,6 +10,7 @@ import (
 	"github.com/dennis/vaultapp/internal/database"
 	"github.com/dennis/vaultapp/internal/scanner"
 	"github.com/dennis/vaultapp/internal/storage"
+	"github.com/dennis/vaultapp/internal/thumbnail"
 	"github.com/dennis/vaultapp/internal/vault"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -75,7 +76,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.6.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.7.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -124,6 +125,21 @@ func (a *App) BrowseDrive(id int64, directory string) ([]database.DirectoryEntry
 		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.Directory(id, directory)
+}
+
+func (a *App) GetImagePreview(id int64) (string, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return "", fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	source, err := a.catalog.SourceFile(id)
+	if err != nil {
+		return "", err
+	}
+	cache, err := vault.AssetPath(a.root, "thumbnails")
+	if err != nil {
+		return "", err
+	}
+	return thumbnail.DataURL(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size))
 }
 
 // SelectAndScan catalogs metadata only. Source files are never modified.

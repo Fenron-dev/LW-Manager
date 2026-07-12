@@ -261,7 +261,7 @@ async function createDirectoryLevel(driveID, directory, depth, driveLabel) {
     } else {
       item.addEventListener('click', (event) => {
         event.stopPropagation();
-        openFileDialog({filename: entry.name, drive: driveLabel, path: entry.path, extension: entry.extension, mimeType: '', size: entry.size, modified: ''});
+        openFileDialog({id: entry.id, filename: entry.name, drive: driveLabel, path: entry.path, extension: entry.extension, mimeType: '', size: entry.size, modified: ''});
       });
     }
   }
@@ -307,6 +307,23 @@ function openFileDialog(file) {
   $('#detail-type').textContent = file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt');
   $('#detail-size').textContent = formatBytes(file.size);
   $('#detail-modified').textContent = formatDate(file.modified);
+  const previewWrap = $('#preview-wrap');
+  const preview = $('#file-preview');
+  const previewStatus = $('#preview-status');
+  preview.removeAttribute('src');
+  preview.classList.add('hidden');
+  const previewable = file.id && (file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif'].includes((file.extension || '').toLowerCase()));
+  previewWrap.classList.toggle('hidden', !previewable);
+  if (previewable) {
+    previewStatus.classList.remove('hidden');
+    previewStatus.textContent = 'Vorschau wird erzeugt …';
+    window.go.main.App.GetImagePreview(file.id).then((dataURL) => {
+      if (!$('#file-dialog').open) return;
+      preview.src = dataURL;
+      preview.classList.remove('hidden');
+      previewStatus.classList.add('hidden');
+    }).catch((error) => { previewStatus.textContent = `Keine Vorschau: ${error}`; });
+  }
   $('#file-dialog').showModal();
 }
 
