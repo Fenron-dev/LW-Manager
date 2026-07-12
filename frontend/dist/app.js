@@ -101,6 +101,7 @@ function renderFiles(files) {
   for (const file of files) {
     const row = document.createElement('div');
     row.className = 'file-row';
+    row.classList.add('file-clickable');
     const name = document.createElement('span');
     name.className = 'file-name';
     name.textContent = file.filename;
@@ -123,6 +124,7 @@ function renderFiles(files) {
     date.className = 'file-date';
     date.textContent = formatDate(file.modified);
     row.append(name, drive, path, type, size, date);
+    row.addEventListener('click', () => openFileDialog(file));
     container.append(row);
   }
 }
@@ -159,25 +161,6 @@ function driveName(drive) {
   return drive.displayName || drive.label;
 }
 
-function createDriveField(label, value, name, options) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'drive-field';
-  const caption = document.createElement('label');
-  caption.textContent = label;
-  let input;
-  if (options) {
-    input = document.createElement('select');
-    input.add(new Option('Nicht festgelegt', ''));
-    options.forEach((option) => input.add(new Option(option, option)));
-  } else {
-    input = document.createElement('input');
-  }
-  input.name = name;
-  input.value = value || '';
-  wrapper.append(caption, input);
-  return wrapper;
-}
-
 async function loadDrives() {
   const drives = await window.go.main.App.GetDrives();
   const list = $('#drive-list');
@@ -188,62 +171,76 @@ async function loadDrives() {
   filter.replaceChildren(new Option('Alle Datenträger', '0'));
   for (const drive of drives) {
     filter.add(new Option(driveName(drive), String(drive.id)));
-    const card = document.createElement('article');
-    card.className = 'drive-card';
-    card.dataset.id = drive.id;
-    const head = document.createElement('div');
-    head.className = 'drive-card-head';
-    const title = document.createElement('div');
-    const heading = document.createElement('h3');
+    const row = document.createElement('div');
+    row.className = 'drive-row';
+    const identity = document.createElement('div');
+    identity.className = 'drive-identity';
+    const heading = document.createElement('strong');
     heading.textContent = driveName(drive);
-    const source = document.createElement('p');
-    source.textContent = `Erkannt als ${drive.label} · ${drive.path}`;
-    source.title = drive.path;
-    title.append(heading, source);
-    const badge = document.createElement('span');
-    badge.className = 'drive-badge';
-    badge.textContent = `${drive.fileCount.toLocaleString('de-DE')} Dateien`;
-    head.append(title, badge);
-    const fields = document.createElement('div');
-    fields.className = 'drive-fields';
-    fields.append(
-      createDriveField('Eigener Name', drive.displayName, 'displayName'),
-      createDriveField('Inventarnummer', drive.inventoryNumber, 'inventoryNumber'),
-      createDriveField('Hersteller', drive.manufacturer, 'manufacturer'),
-      createDriveField('Bauart', drive.deviceType, 'deviceType', ['2,5″ HDD', '2,5″ SSD', 'M.2 SATA SSD', 'M.2 NVMe SSD', 'USB-A Stick', 'USB-C Stick', 'SD-Karte', 'Sonstiges']),
-    );
-    const stats = document.createElement('div');
-    stats.className = 'drive-stats';
+    const source = document.createElement('span');
+    source.textContent = drive.inventoryNumber ? `Nr. ${drive.inventoryNumber} · ${drive.label}` : drive.label;
+    identity.append(heading, source);
+    const kind = document.createElement('span');
+    kind.className = 'drive-cell';
+    kind.textContent = [drive.manufacturer, drive.deviceType].filter(Boolean).join(' · ') || 'Nicht klassifiziert';
+    const capacity = document.createElement('div');
+    capacity.className = 'drive-capacity';
     const free = Math.max(0, drive.totalSize - drive.usedSize);
-    [['Kapazität', drive.totalSize], ['Belegt', drive.usedSize], ['Frei', free]].forEach(([label, value]) => {
-      const stat = document.createElement('div');
-      stat.className = 'drive-stat';
-      const strong = document.createElement('strong');
-      strong.textContent = value ? formatBytes(value) : 'Unbekannt';
-      stat.append(strong, document.createTextNode(label));
-      stats.append(stat);
-    });
-    const actions = document.createElement('div');
-    actions.className = 'drive-card-actions';
-    const save = document.createElement('button');
-    save.textContent = 'Angaben speichern';
-    save.addEventListener('click', async () => {
-      save.disabled = true;
-      try {
-        const values = Object.fromEntries([...fields.querySelectorAll('input,select')].map((input) => [input.name, input.value]));
-        await window.go.main.App.UpdateDrive(drive.id, values.displayName, values.inventoryNumber, values.manufacturer, values.deviceType);
-        save.textContent = 'Gespeichert ✓';
-        setTimeout(() => { save.textContent = 'Angaben speichern'; }, 1600);
-        await loadInfo();
-      } catch (error) {
-        save.textContent = `Fehler: ${error}`;
-      } finally { save.disabled = false; }
-    });
-    actions.append(save);
-    card.append(head, fields, stats, actions);
-    list.append(card);
+    const capacityText = document.createElement('span');
+    capacityText.textContent = drive.totalSize ? `${formatBytes(drive.usedSize)} von ${formatBytes(drive.totalSize)} belegt` : 'Kapazität unbekannt';
+    const bar = document.createElement('div');
+    bar.className = 'capacity-bar';
+    const fill = document.createElement('span');
+    fill.style.width = drive.totalSize ? `${Math.min(100, drive.usedSize / drive.totalSize * 100)}%` : '0%';
+    bar.append(fill);
+    capacity.append(capacityText, bar);
+    const files = document.createElement('span');
+    files.className = 'drive-cell';
+    files.textContent = `${drive.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(free)} frei`;
+    const edit = document.createElement('button');
+    edit.className = 'secondary compact';
+    edit.textContent = 'Bearbeiten';
+    edit.addEventListener('click', () => openDriveDialog(drive));
+    row.append(identity, kind, capacity, files, edit);
+    list.append(row);
   }
   filter.value = [...filter.options].some((option) => option.value === selectedDrive) ? selectedDrive : '0';
+}
+
+function openDriveDialog(drive) {
+  $('#edit-drive-id').value = drive.id;
+  $('#drive-dialog-title').textContent = driveName(drive);
+  $('#edit-display-name').value = drive.displayName || '';
+  $('#edit-inventory-number').value = drive.inventoryNumber || '';
+  $('#edit-manufacturer').value = drive.manufacturer || '';
+  $('#edit-device-type').value = drive.deviceType || '';
+  $('#drive-dialog-path').textContent = `Erkannt als ${drive.label} · ${drive.path}`;
+  $('#drive-save-status').textContent = '';
+  $('#drive-dialog').showModal();
+}
+
+async function saveDrive(event) {
+  event.preventDefault();
+  const button = $('#save-drive-button');
+  button.disabled = true;
+  try {
+    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value);
+    $('#drive-save-status').textContent = 'Gespeichert ✓';
+    await Promise.all([loadDrives(), loadInfo()]);
+    setTimeout(() => $('#drive-dialog').close(), 350);
+  } catch (error) {
+    $('#drive-save-status').textContent = `Fehler: ${error}`;
+  } finally { button.disabled = false; }
+}
+
+function openFileDialog(file) {
+  $('#file-dialog-title').textContent = file.filename;
+  $('#detail-drive').textContent = file.drive;
+  $('#detail-path').textContent = file.path;
+  $('#detail-type').textContent = file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt');
+  $('#detail-size').textContent = formatBytes(file.size);
+  $('#detail-modified').textContent = formatDate(file.modified);
+  $('#file-dialog').showModal();
 }
 
 window.runtime.EventsOn('scan:progress', (event) => {
@@ -251,7 +248,6 @@ window.runtime.EventsOn('scan:progress', (event) => {
   $('#scan-detail').textContent = event.path;
 });
 scanButton.addEventListener('click', startScan);
-$('#nav-scan').addEventListener('click', startScan);
 $('#nav-overview').addEventListener('click', showOverview);
 $('#nav-library').addEventListener('click', showLibrary);
 $('#nav-drives').addEventListener('click', showDrives);
@@ -262,4 +258,5 @@ $('#extension-filter').addEventListener('change', () => loadLibrary(1));
 $('#drive-filter').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
+$('#save-drive-button').addEventListener('click', saveDrive);
 loadInfo().then(loadDrives);

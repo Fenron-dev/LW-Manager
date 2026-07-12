@@ -21,7 +21,7 @@ Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet re
 ## Roadmap
 
 - Hardware-Datenträger automatisch erkennen und eindeutig identifizieren
-- Thumbnails und Dateidetails
+- Thumbnails
 - optionale lokale/entfernte KI-Anbieter
 
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.

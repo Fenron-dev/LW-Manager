@@ -9,7 +9,7 @@
 <body>
   <aside>
     <div class="brand"><span>V</span> VaultApp</div>
-    <nav><button id="nav-overview" class="active">Übersicht</button><button id="nav-scan">Scannen</button><button id="nav-library">Bibliothek</button><button id="nav-drives">Datenträger</button></nav>
+    <nav><button id="nav-overview" class="active">Übersicht</button><button id="nav-library">Bibliothek</button><button id="nav-drives">Datenträger</button></nav>
     <button class="settings">Einstellungen</button>
   </aside>
   <main>
@@ -37,6 +37,8 @@
       <div id="drives-empty" class="library-empty hidden">Noch keine Datenträger katalogisiert.</div>
     </section>
   </main>
+  <dialog id="drive-dialog" class="modal"><form method="dialog"><div class="modal-head"><div><p class="eyebrow">DATENTRÄGER BEARBEITEN</p><h2 id="drive-dialog-title">Datenträger</h2></div><button class="modal-close" value="cancel" aria-label="Schließen">×</button></div><input id="edit-drive-id" type="hidden"><div class="modal-fields"><label>Eigener Name<input id="edit-display-name"></label><label>Inventarnummer<input id="edit-inventory-number"></label><label>Hersteller<input id="edit-manufacturer"></label><label>Bauart<select id="edit-device-type"><option value="">Nicht festgelegt</option><option>2,5″ HDD</option><option>2,5″ SSD</option><option>M.2 SATA SSD</option><option>M.2 NVMe SSD</option><option>USB-A Stick</option><option>USB-C Stick</option><option>SD-Karte</option><option>Sonstiges</option></select></label></div><p id="drive-dialog-path" class="modal-path"></p><div class="modal-actions"><span id="drive-save-status"></span><button value="cancel" class="secondary">Abbrechen</button><button id="save-drive-button" value="default">Speichern</button></div></form></dialog>
+  <dialog id="file-dialog" class="modal"><form method="dialog"><div class="modal-head"><div><p class="eyebrow">DATEIDETAILS</p><h2 id="file-dialog-title">Datei</h2></div><button class="modal-close" value="cancel" aria-label="Schließen">×</button></div><dl class="file-details"><div><dt>Datenträger</dt><dd id="detail-drive"></dd></div><div><dt>Relativer Pfad</dt><dd id="detail-path"></dd></div><div><dt>Dateityp</dt><dd id="detail-type"></dd></div><div><dt>Größe</dt><dd id="detail-size"></dd></div><div><dt>Geändert</dt><dd id="detail-modified"></dd></div></dl><div class="modal-actions"><button value="cancel">Schließen</button></div></form></dialog>
   <script src="app.js"></script>
 </body>
 </html>
