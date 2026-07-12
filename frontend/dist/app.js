@@ -9,6 +9,7 @@ let archivePage = 1;
 let archivePages = 1;
 let comparisonPage = 1;
 let comparisonPages = 1;
+let comparisonMode = 'list';
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -283,6 +284,10 @@ async function loadComparison(page = 1) {
   const snapshotID = Number($('#compare-snapshot').value);
   if (!snapshotID) { $('#comparison-meta').textContent = 'Für diesen Datenträger ist noch kein Archivstand vorhanden.'; $('#comparison-results').replaceChildren(); return; }
   comparisonPage = Math.max(1,page);
+  if (comparisonMode === 'tree') { await loadComparisonTree(); return; }
+  $('.comparison-table').classList.remove('hidden');
+  $('#comparison-tree').classList.add('hidden');
+  $('#compare-pagination').classList.remove('hidden');
   $('#comparison-meta').textContent = 'Vergleich wird berechnet …';
   $('#compare-button').disabled = true;
   let result;
@@ -313,6 +318,33 @@ async function loadComparison(page = 1) {
   }
   $('#compare-previous').disabled=comparisonPage<=1;$('#compare-next').disabled=comparisonPage>=comparisonPages;
 }
+
+async function loadComparisonTree() {
+  const snapshotID=Number($('#compare-snapshot').value);if(!snapshotID){$('#comparison-meta').textContent='Für diesen Datenträger ist noch kein Archivstand vorhanden.';return}
+  $('.comparison-table').classList.add('hidden');$('#compare-pagination').classList.add('hidden');
+  const tree=$('#comparison-tree');tree.classList.remove('hidden');tree.textContent='Vergleichsbaum wird geladen …';
+  $('#comparison-meta').textContent='Ordneränderungen werden zusammengefasst …';
+  try{tree.replaceChildren(await createComparisonLevel(snapshotID,'',0));$('#comparison-meta').textContent='Ordner aufklappen, um Änderungen einzugrenzen.'}
+  catch(error){tree.textContent=`Baumvergleich fehlgeschlagen: ${error}`;$('#comparison-meta').textContent='Vergleich konnte nicht geladen werden.'}
+}
+
+async function createComparisonLevel(snapshotID,directory,depth){
+  const entries=await withTimeout(window.go.main.App.CompareSnapshotDirectory(snapshotID,directory,$('#compare-status').value),21000,'Zeitüberschreitung beim Baumvergleich');
+  const level=document.createElement('div');level.className='compare-tree-level';
+  for(const entry of entries){
+    const row=document.createElement('div');row.className=`compare-tree-row tree-status-${entry.status}`;row.style.setProperty('--depth',depth);
+    const toggle=document.createElement('span');toggle.className='tree-toggle';toggle.textContent=entry.isDir?'›':'·';
+    const name=document.createElement('strong');name.textContent=entry.name;name.title=entry.path;
+    const counts=document.createElement('span');counts.className='compare-tree-counts';
+    const parts=[];if(entry.added)parts.push(`${entry.added} neu`);if(entry.removed)parts.push(`${entry.removed} entfernt`);if(entry.modified)parts.push(`${entry.modified} geändert`);if(entry.unchanged)parts.push(`${entry.unchanged} gleich`);counts.textContent=parts.join(' · ');
+    row.append(toggle,name,counts);level.append(row);
+    if(entry.isDir){const children=document.createElement('div');children.className='hidden';row.addEventListener('click',async()=>{const opening=children.classList.contains('hidden');children.classList.toggle('hidden',!opening);toggle.textContent=opening?'⌄':'›';if(opening&&!children.dataset.loaded){children.dataset.loaded='true';try{children.append(await createComparisonLevel(snapshotID,entry.path,depth+1))}catch(error){children.textContent=`Fehler: ${error}`}}});level.append(children)}
+  }
+  if(!entries.length){const empty=document.createElement('div');empty.className='tree-empty';empty.textContent='Keine Einträge für diesen Filter.';level.append(empty)}
+  return level;
+}
+
+function setComparisonMode(mode){comparisonMode=mode;$('#compare-list-mode').classList.toggle('active',mode==='list');$('#compare-tree-mode').classList.toggle('active',mode==='tree');$('#compare-query').disabled=mode==='tree';loadComparison(1)}
 
 async function openArchiveDialog(drive) {
   $('#archive-dialog-title').textContent = driveName(drive);
@@ -522,4 +554,6 @@ $('#compare-snapshot').addEventListener('change', () => loadComparison(1));
 $('#compare-query').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadComparison(1); });
 $('#compare-previous').addEventListener('click', () => loadComparison(comparisonPage - 1));
 $('#compare-next').addEventListener('click', () => loadComparison(comparisonPage + 1));
+$('#compare-list-mode').addEventListener('click',()=>setComparisonMode('list'));
+$('#compare-tree-mode').addEventListener('click',()=>setComparisonMode('tree'));
 loadInfo().then(loadDrives);

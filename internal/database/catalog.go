@@ -113,6 +113,17 @@ type ComparisonResult struct {
 	PageSize int               `json:"pageSize"`
 }
 
+type ComparisonTreeEntry struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	IsDir     bool   `json:"isDir"`
+	Status    string `json:"status"`
+	Added     int64  `json:"added"`
+	Removed   int64  `json:"removed"`
+	Modified  int64  `json:"modified"`
+	Unchanged int64  `json:"unchanged"`
+}
+
 func Open(path string) (*Catalog, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -411,6 +422,96 @@ func (c *Catalog) CompareSnapshot(ctx context.Context, snapshotID int64, status,
 		result.Entries = append(result.Entries, entry)
 	}
 	return result, rows.Err()
+}
+
+func (c *Catalog) CompareDirectory(ctx context.Context, snapshotID int64, directory, status string) ([]ComparisonTreeEntry, error) {
+	directory = strings.Trim(strings.ReplaceAll(directory, `\`, "/"), "/")
+	if directory == ".." || strings.HasPrefix(directory, "../") || strings.Contains(directory, "/../") {
+		return nil, fmt.Errorf("ungültiger Verzeichnispfad")
+	}
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "" && status != "added" && status != "removed" && status != "modified" && status != "unchanged" {
+		return nil, fmt.Errorf("ungültiger Vergleichsfilter")
+	}
+	const comparison = `
+		SELECT f.path,CASE WHEN a.id IS NULL THEN 'added' WHEN f.size<>a.size OR COALESCE(f.modified_at,'')<>COALESCE(a.modified_at,'') THEN 'modified' ELSE 'unchanged' END status
+		FROM files f JOIN scan_snapshots s ON s.id=? AND s.drive_id=f.drive_id LEFT JOIN archived_files a ON a.snapshot_id=s.id AND a.path=f.path
+		UNION ALL
+		SELECT a.path,'removed' FROM archived_files a JOIN scan_snapshots s ON s.id=a.snapshot_id LEFT JOIN files f ON f.drive_id=s.drive_id AND f.path=a.path
+		WHERE a.snapshot_id=? AND f.id IS NULL`
+	prefix := ""
+	if directory != "" {
+		prefix = directory + "/"
+	}
+	query := "SELECT path,status FROM (" + comparison + `) WHERE (?='' OR status=?) AND path LIKE ? ESCAPE '\'`
+	rows, err := c.readDB.QueryContext(ctx, query, snapshotID, snapshotID, status, status, escapeLike(prefix)+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entries := map[string]*ComparisonTreeEntry{}
+	for rows.Next() {
+		var path, itemStatus string
+		if err := rows.Scan(&path, &itemStatus); err != nil {
+			return nil, err
+		}
+		remainder := strings.TrimPrefix(path, prefix)
+		parts := strings.SplitN(remainder, "/", 2)
+		name := parts[0]
+		if name == "" {
+			continue
+		}
+		entry := entries[name]
+		if entry == nil {
+			entry = &ComparisonTreeEntry{Name: name, Path: prefix + name, IsDir: len(parts) == 2}
+			entries[name] = entry
+		}
+		if len(parts) == 2 {
+			entry.IsDir = true
+		}
+		switch itemStatus {
+		case "added":
+			entry.Added++
+		case "removed":
+			entry.Removed++
+		case "modified":
+			entry.Modified++
+		default:
+			entry.Unchanged++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]ComparisonTreeEntry, 0, len(entries))
+	for _, entry := range entries {
+		entry.Status = treeStatus(entry)
+		result = append(result, *entry)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].IsDir != result[j].IsDir {
+			return result[i].IsDir
+		}
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+	return result, nil
+}
+
+func treeStatus(entry *ComparisonTreeEntry) string {
+	count, status := 0, "unchanged"
+	for _, candidate := range []struct {
+		name  string
+		value int64
+	}{{"added", entry.Added}, {"removed", entry.Removed}, {"modified", entry.Modified}, {"unchanged", entry.Unchanged}} {
+		if candidate.value > 0 {
+			count++
+			status = candidate.name
+		}
+	}
+	if count > 1 {
+		return "mixed"
+	}
+	return status
 }
 
 func (c *Catalog) migrate() error {
