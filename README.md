@@ -24,7 +24,7 @@ Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet re
 
 ## Roadmap
 
-- weitere Vorschauformate (HEIC, PDF, Video)
+- weitere Vorschauformate (HEIC, Video)
 - optionale lokale/entfernte KI-Anbieter
 
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.

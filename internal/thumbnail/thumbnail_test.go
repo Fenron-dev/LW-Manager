@@ -32,3 +32,18 @@ func TestWebPIsReturnedForDirectBrowserPreview(t *testing.T) {
 		t.Fatalf("unexpected data URL: %s", result)
 	}
 }
+
+func TestPDFIsReturnedForEmbeddedPreview(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, "document.pdf")
+	if err := os.WriteFile(source, []byte("%PDF-1.7\n%%EOF"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := DataURL(source, filepath.Join(directory, "cache"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(result, "data:application/pdf;base64,") {
+		t.Fatalf("unexpected data URL: %s", result)
+	}
+}

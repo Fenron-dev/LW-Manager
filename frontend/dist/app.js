@@ -531,18 +531,31 @@ function openFileDialog(file) {
   $('#detail-modified').textContent = formatDate(file.modified);
   const previewWrap = $('#preview-wrap');
   const preview = $('#file-preview');
+  const documentPreview = $('#document-preview');
   const previewStatus = $('#preview-status');
   preview.removeAttribute('src');
   preview.classList.add('hidden');
-  const previewable = file.id && (file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes((file.extension || '').toLowerCase()));
+  documentPreview.removeAttribute('src');
+  documentPreview.classList.add('hidden');
+  const extension = (file.extension || '').toLowerCase();
+  const isPDF = file.mimeType === 'application/pdf' || extension === 'pdf';
+  const previewable = file.id && (isPDF || file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension));
   previewWrap.classList.toggle('hidden', !previewable);
   if (previewable) {
     previewStatus.classList.remove('hidden');
     previewStatus.textContent = 'Vorschau wird erzeugt …';
     window.go.main.App.GetImagePreview(file.id).then((dataURL) => {
       if (!$('#file-dialog').open) return;
-      preview.src = dataURL;
-      preview.classList.remove('hidden');
+      if (isPDF) {
+        documentPreview.src = dataURL;
+        documentPreview.style.width = '100%';
+        documentPreview.style.height = '420px';
+        documentPreview.style.border = '0';
+        documentPreview.classList.remove('hidden');
+      } else {
+        preview.src = dataURL;
+        preview.classList.remove('hidden');
+      }
       previewStatus.classList.add('hidden');
     }).catch((error) => { previewStatus.textContent = `Keine Vorschau: ${error}`; });
   }

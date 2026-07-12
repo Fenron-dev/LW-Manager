@@ -14,6 +14,7 @@ import (
 
 const maxSourceSize = 100 << 20
 const maxDirectSize = 25 << 20
+const maxPDFSize = 40 << 20
 
 func DataURL(source, cacheDir, identity string) (string, error) {
 	info, err := os.Stat(source)
@@ -22,6 +23,16 @@ func DataURL(source, cacheDir, identity string) (string, error) {
 	}
 	if info.Size() > maxSourceSize {
 		return "", fmt.Errorf("Bild ist größer als 100 MB")
+	}
+	if filepath.Ext(source) == ".pdf" || filepath.Ext(source) == ".PDF" {
+		if info.Size() > maxPDFSize {
+			return "", fmt.Errorf("PDF-Vorschau ist größer als 40 MB")
+		}
+		data, err := os.ReadFile(source)
+		if err != nil {
+			return "", err
+		}
+		return encodeMIME(data, "application/pdf"), nil
 	}
 	if filepath.Ext(source) == ".webp" || filepath.Ext(source) == ".WEBP" {
 		if info.Size() > maxDirectSize {
