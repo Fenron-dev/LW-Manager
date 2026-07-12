@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	_ "embed"
@@ -17,7 +18,7 @@ import (
 //go:embed schema.sql
 var schema string
 
-type Catalog struct{ db *sql.DB }
+type Catalog struct{ db, readDB *sql.DB }
 type DriveScan struct {
 	Path, Label string
 	Files       []scanner.File
@@ -122,14 +123,25 @@ func Open(path string) (*Catalog, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("Datenbankschema: %w", err)
 	}
-	catalog := &Catalog{db: db}
+	readDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	readDB.SetMaxOpenConns(2)
+	if _, err := readDB.Exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA query_only=ON"); err != nil {
+		_ = readDB.Close()
+		_ = db.Close()
+		return nil, err
+	}
+	catalog := &Catalog{db: db, readDB: readDB}
 	if err := catalog.migrate(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("Datenbankmigration: %w", err)
 	}
 	return catalog, nil
 }
-func (c *Catalog) Close() error { return c.db.Close() }
+func (c *Catalog) Close() error { _ = c.readDB.Close(); return c.db.Close() }
 func (c *Catalog) Stats() (files, drives int64, err error) {
 	if err = c.db.QueryRow("SELECT COUNT(*) FROM files").Scan(&files); err != nil {
 		return
@@ -220,7 +232,7 @@ func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufactur
 	return nil
 }
 
-func (c *Catalog) Directory(driveID int64, directory string) ([]DirectoryEntry, error) {
+func (c *Catalog) Directory(ctx context.Context, driveID int64, directory string) ([]DirectoryEntry, error) {
 	directory = strings.Trim(strings.ReplaceAll(directory, `\`, "/"), "/")
 	if directory == ".." || strings.HasPrefix(directory, "../") || strings.Contains(directory, "/../") {
 		return nil, fmt.Errorf("ungültiger Verzeichnispfad")
@@ -229,7 +241,7 @@ func (c *Catalog) Directory(driveID int64, directory string) ([]DirectoryEntry, 
 	if directory != "" {
 		prefix = directory + "/"
 	}
-	rows, err := c.db.Query(`SELECT id,path,size,COALESCE(extension,'') FROM files WHERE drive_id=? AND path LIKE ? ESCAPE '\' ORDER BY path`, driveID, escapeLike(prefix)+"%")
+	rows, err := c.readDB.QueryContext(ctx, `SELECT id,path,size,COALESCE(extension,'') FROM files WHERE drive_id=? AND path LIKE ? ESCAPE '\' ORDER BY path`, driveID, escapeLike(prefix)+"%")
 	if err != nil {
 		return nil, err
 	}

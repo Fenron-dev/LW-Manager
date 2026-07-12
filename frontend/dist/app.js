@@ -23,6 +23,12 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? '–' : date.toLocaleDateString('de-DE');
 }
 
+function withTimeout(promise, milliseconds, message) {
+  let timeout;
+  const timer = new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(message)), milliseconds); });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(timeout));
+}
+
 function activateNavigation(active) {
   document.querySelectorAll('nav button').forEach((button) => button.classList.remove('active'));
   $(active).classList.add('active');
@@ -243,7 +249,17 @@ async function loadDrives() {
         treePanel.textContent = 'Verzeichnisstruktur wird geladen …';
         try {
           treePanel.replaceChildren(await createDirectoryLevel(drive.id, '', 0, driveName(drive)));
-        } catch (error) { treePanel.textContent = `Verzeichnis kann nicht geladen werden: ${error}`; }
+        } catch (error) {
+          delete treePanel.dataset.loaded;
+          treePanel.replaceChildren();
+          const message = document.createElement('span');
+          message.textContent = `Verzeichnis kann nicht geladen werden: ${error}`;
+          const retry = document.createElement('button');
+          retry.className = 'secondary compact';
+          retry.textContent = 'Erneut versuchen';
+          retry.addEventListener('click', (event) => { event.stopPropagation(); treePanel.classList.add('hidden'); row.click(); });
+          treePanel.append(message, retry);
+        }
       }
     });
     list.append(row, treePanel);
@@ -362,7 +378,7 @@ async function loadArchiveFiles(page = archivePage) {
 }
 
 async function createDirectoryLevel(driveID, directory, depth, driveLabel) {
-  const entries = await window.go.main.App.BrowseDrive(driveID, directory);
+  const entries = await withTimeout(window.go.main.App.BrowseDrive(driveID, directory), 13000, 'Zeitüberschreitung bei der Datenbankabfrage');
   const level = document.createElement('div');
   level.className = 'tree-level';
   for (const entry of entries) {
