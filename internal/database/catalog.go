@@ -34,6 +34,7 @@ type Drive struct {
 	Path            string `json:"path"`
 	Manufacturer    string `json:"manufacturer"`
 	DeviceType      string `json:"deviceType"`
+	StorageLocation string `json:"storageLocation"`
 	TotalSize       int64  `json:"totalSize"`
 	UsedSize        int64  `json:"usedSize"`
 	FileCount       int64  `json:"fileCount"`
@@ -210,7 +211,7 @@ func (c *Catalog) Search(query, extension string, driveID int64, limit, offset i
 
 func (c *Catalog) Drives() ([]Drive, error) {
 	rows, err := c.db.Query(`SELECT d.id,d.label,COALESCE(d.display_name,''),COALESCE(d.inventory_number,''),COALESCE(d.vault_path,''),
-		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
+		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
 		FROM drives d LEFT JOIN files f ON f.drive_id=d.id GROUP BY d.id ORDER BY COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
@@ -219,7 +220,7 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	drives := make([]Drive, 0)
 	for rows.Next() {
 		var drive Drive
-		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
+		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
 			return nil, err
 		}
 		drives = append(drives, drive)
@@ -227,9 +228,9 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	return drives, rows.Err()
 }
 
-func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType string) error {
-	result, err := c.db.Exec(`UPDATE drives SET display_name=?,inventory_number=?,manufacturer=?,device_type=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		strings.TrimSpace(displayName), strings.TrimSpace(inventoryNumber), strings.TrimSpace(manufacturer), strings.TrimSpace(deviceType), id)
+func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation string) error {
+	result, err := c.db.Exec(`UPDATE drives SET display_name=?,inventory_number=?,manufacturer=?,device_type=?,storage_location=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		strings.TrimSpace(displayName), strings.TrimSpace(inventoryNumber), strings.TrimSpace(manufacturer), strings.TrimSpace(deviceType), strings.TrimSpace(storageLocation), id)
 	if err != nil {
 		return err
 	}
@@ -241,6 +242,32 @@ func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufactur
 		return fmt.Errorf("Datenträger %d wurde nicht gefunden", id)
 	}
 	return nil
+}
+
+func (c *Catalog) StorageLocations() ([]string, error) {
+	rows, err := c.readDB.Query(`SELECT name FROM storage_locations ORDER BY name COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	locations := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		locations = append(locations, name)
+	}
+	return locations, rows.Err()
+}
+
+func (c *Catalog) AddStorageLocation(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("Lagerort darf nicht leer sein")
+	}
+	_, err := c.db.Exec(`INSERT INTO storage_locations(name) VALUES(?) ON CONFLICT(name) DO NOTHING`, name)
+	return err
 }
 
 func (c *Catalog) Directory(ctx context.Context, driveID int64, directory string) ([]DirectoryEntry, error) {
@@ -517,7 +544,7 @@ func treeStatus(entry *ComparisonTreeEntry) string {
 func (c *Catalog) migrate() error {
 	columns := map[string]string{
 		"display_name": "TEXT", "inventory_number": "TEXT", "manufacturer": "TEXT", "device_type": "TEXT",
-		"total_size": "INTEGER NOT NULL DEFAULT 0", "used_size": "INTEGER NOT NULL DEFAULT 0",
+		"storage_location": "TEXT", "total_size": "INTEGER NOT NULL DEFAULT 0", "used_size": "INTEGER NOT NULL DEFAULT 0",
 	}
 	rows, err := c.db.Query("PRAGMA table_info(drives)")
 	if err != nil {

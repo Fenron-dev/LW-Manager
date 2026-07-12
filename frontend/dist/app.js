@@ -208,7 +208,7 @@ async function loadDrives() {
     const heading = document.createElement('strong');
     heading.textContent = driveName(drive);
     const source = document.createElement('span');
-    source.textContent = drive.inventoryNumber ? `Nr. ${drive.inventoryNumber} · ${drive.label}` : drive.label;
+    source.textContent = [drive.inventoryNumber ? `Nr. ${drive.inventoryNumber}` : '', drive.label, drive.storageLocation ? `Lager: ${drive.storageLocation}` : ''].filter(Boolean).join(' · ');
     identity.append(heading, source);
     const kind = document.createElement('span');
     kind.className = 'drive-cell';
@@ -472,13 +472,14 @@ async function createDirectoryLevel(driveID, directory, depth, driveLabel) {
   return level;
 }
 
-function openDriveDialog(drive) {
+async function openDriveDialog(drive) {
   $('#edit-drive-id').value = drive.id;
   $('#drive-dialog-title').textContent = driveName(drive);
   $('#edit-display-name').value = drive.displayName || '';
   $('#edit-inventory-number').value = drive.inventoryNumber || '';
   $('#edit-manufacturer').value = drive.manufacturer || '';
   $('#edit-device-type').value = drive.deviceType || '';
+  await loadStorageLocations(drive.storageLocation || '');
   $('#drive-dialog-path').textContent = `Erkannt als ${drive.label} · ${drive.path}`;
   $('#drive-save-status').textContent = '';
   $('#drive-dialog').showModal();
@@ -489,13 +490,30 @@ async function saveDrive(event) {
   const button = $('#save-drive-button');
   button.disabled = true;
   try {
-    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value);
+    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value, $('#edit-storage-location').value);
     $('#drive-save-status').textContent = 'Gespeichert ✓';
     await Promise.all([loadDrives(), loadInfo()]);
     setTimeout(() => $('#drive-dialog').close(), 350);
   } catch (error) {
     $('#drive-save-status').textContent = `Fehler: ${error}`;
   } finally { button.disabled = false; }
+}
+
+async function loadStorageLocations(selected = '') {
+  const locations = await window.go.main.App.GetStorageLocations();
+  const select = $('#edit-storage-location');
+  select.replaceChildren(new Option('Nicht festgelegt', ''));
+  locations.forEach((location) => select.add(new Option(location, location)));
+  select.value = selected;
+}
+
+async function addStorageLocation() {
+  const name = prompt('Neuen Lagerort eingeben, z. B. Schrank A / Fach 3:');
+  if (!name?.trim()) return;
+  try {
+    await window.go.main.App.AddStorageLocation(name);
+    await loadStorageLocations(name.trim());
+  } catch (error) { $('#drive-save-status').textContent = `Fehler: ${error}`; }
 }
 
 function openFileDialog(file) {
@@ -542,6 +560,7 @@ $('#drive-filter').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
 $('#save-drive-button').addEventListener('click', saveDrive);
+$('#add-location-button').addEventListener('click', addStorageLocation);
 $('#archive-back').addEventListener('click', () => { $('#snapshot-list').classList.remove('hidden'); $('#archive-browser').classList.add('hidden'); });
 $('#archive-search-button').addEventListener('click', () => loadArchiveFiles(1));
 $('#archive-search').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadArchiveFiles(1); } });

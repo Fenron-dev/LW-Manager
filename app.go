@@ -77,7 +77,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.10.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.11.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -114,11 +114,24 @@ func (a *App) GetDrives() ([]database.Drive, error) {
 	return a.catalog.Drives()
 }
 
-func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType string) error {
+func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation string) error {
 	if a.initErr != nil || a.catalog == nil {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
-	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType)
+	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType, storageLocation)
+}
+
+func (a *App) GetStorageLocations() ([]string, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.StorageLocations()
+}
+func (a *App) AddStorageLocation(name string) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.AddStorageLocation(name)
 }
 
 func (a *App) BrowseDrive(id int64, directory string) ([]database.DirectoryEntry, error) {

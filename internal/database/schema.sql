@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS drives (
     inventory_number TEXT,
     manufacturer TEXT,
     device_type TEXT,
+    storage_location TEXT,
     used_size INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -66,3 +67,9 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_drive ON scan_snapshots(drive_id);
 CREATE INDEX IF NOT EXISTS idx_archived_snapshot ON archived_files(snapshot_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_archived_snapshot_path ON archived_files(snapshot_id,path);
 CREATE INDEX IF NOT EXISTS idx_archived_name ON archived_files(filename);
+
+CREATE TABLE IF NOT EXISTS storage_locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL COLLATE NOCASE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
