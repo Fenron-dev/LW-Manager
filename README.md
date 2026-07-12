@@ -4,7 +4,7 @@ Portable Desktop-Anwendung zur Katalogisierung externer Datenträger. Der aktuel
 
 Bei einem erneuten Scan ersetzt VaultApp den aktiven Katalog vollständig durch den aktuellen Inhalt der Quelle. Der vorherige Stand wird als löschbarer Archivstand gespeichert und erscheint nicht in der normalen Bibliothek.
 
-Der Tab **Archiv** vergleicht den aktuellen Inhalt mit einem wählbaren früheren Stand und markiert neue, entfernte, geänderte und unveränderte Pfade farblich.
+Der Tab **Archiv** vergleicht den aktuellen Inhalt mit einem wählbaren früheren Stand und markiert neue, entfernte, geänderte und unveränderte Pfade farblich. In der Bibliothek kann eine optionale Duplikatprüfung gestartet werden. Sie bildet zunächst Größenkandidaten und liest nur diese Dateien für einen SHA-256-Inhaltsvergleich.
 
 ## Builds ohne lokale Toolchain
 
@@ -25,7 +25,6 @@ Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet re
 ## Roadmap
 
 - weitere Vorschauformate (WebP, HEIC, PDF, Video)
-- optionale Duplikaterkennung per Inhalts-Hash
 - optionale lokale/entfernte KI-Anbieter
 
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.

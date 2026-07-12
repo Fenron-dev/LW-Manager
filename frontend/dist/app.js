@@ -549,9 +549,49 @@ function openFileDialog(file) {
   $('#file-dialog').showModal();
 }
 
+async function findDuplicates() {
+  const button = $('#duplicate-button');
+  button.disabled = true;
+  $('#duplicate-status').textContent = 'Dateien gleicher Größe werden per SHA-256 geprüft …';
+  $('#duplicate-results').replaceChildren();
+  $('#duplicate-dialog').showModal();
+  try {
+    const result = await window.go.main.App.FindDuplicates();
+    const duplicateFiles = result.groups.reduce((sum, group) => sum + group.files.length, 0);
+    $('#duplicate-status').textContent = result.groups.length
+      ? `${result.groups.length.toLocaleString('de-DE')} Gruppen mit ${duplicateFiles.toLocaleString('de-DE')} Dateien gefunden${result.skipped ? ` · ${result.skipped} nicht erreichbar` : ''}.`
+      : `Keine inhaltlich identischen Dateien gefunden${result.skipped ? ` · ${result.skipped} nicht erreichbar` : ''}.`;
+    const container = $('#duplicate-results');
+    for (const group of result.groups) {
+      const card = document.createElement('section');
+      card.className = 'snapshot-card';
+      const title = document.createElement('strong');
+      title.textContent = `${group.files.length} identische Dateien · je ${formatBytes(group.size)}`;
+      card.append(title);
+      for (const file of group.files) {
+        const entry = document.createElement('button');
+        entry.type = 'button';
+        entry.className = 'secondary';
+        entry.textContent = `${file.drive} · ${file.path}`;
+        entry.title = file.path;
+        entry.addEventListener('click', () => openFileDialog({id: file.id, filename: file.filename, drive: file.drive, path: file.path, size: group.size, extension: '', mimeType: '', modified: ''}));
+        card.append(entry);
+      }
+      container.append(card);
+    }
+  } catch (error) {
+    $('#duplicate-status').textContent = `Duplikatprüfung fehlgeschlagen: ${error}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 window.runtime.EventsOn('scan:progress', (event) => {
   $('#scan-title').textContent = event.phase === 'save' ? 'Katalog wird gespeichert …' : `${event.files.toLocaleString('de-DE')} Dateien gefunden`;
   $('#scan-detail').textContent = event.path;
+});
+window.runtime.EventsOn('duplicates:progress', (event) => {
+  $('#duplicate-status').textContent = `${event.done.toLocaleString('de-DE')} von ${event.total.toLocaleString('de-DE')} Kandidaten geprüft …`;
 });
 scanButton.addEventListener('click', startScan);
 $('#nav-overview').addEventListener('click', showOverview);
@@ -565,6 +605,7 @@ $('#extension-filter').addEventListener('change', () => loadLibrary(1));
 $('#drive-filter').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
+$('#duplicate-button').addEventListener('click', findDuplicates);
 $('#save-drive-button').addEventListener('click', saveDrive);
 $('#add-location-button').addEventListener('click', addStorageLocation);
 $('#archive-back').addEventListener('click', () => { $('#snapshot-list').classList.remove('hidden'); $('#archive-browser').classList.add('hidden'); });

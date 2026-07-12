@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	goruntime "runtime"
 	"sync"
@@ -43,6 +47,12 @@ type ScanResult struct {
 	Message   string `json:"message"`
 }
 
+type DuplicateResult struct {
+	Groups  []database.DuplicateGroup `json:"groups"`
+	Hashed  int                       `json:"hashed"`
+	Skipped int                       `json:"skipped"`
+}
+
 type LibraryResult struct {
 	Files      []database.FileResult `json:"files"`
 	Extensions []string              `json:"extensions"`
@@ -77,7 +87,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.13.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.14.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -112,6 +122,48 @@ func (a *App) GetDrives() ([]database.Drive, error) {
 		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.Drives()
+}
+
+func (a *App) FindDuplicates() (DuplicateResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return DuplicateResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	candidates, err := a.catalog.HashCandidates()
+	if err != nil {
+		return DuplicateResult{}, err
+	}
+	result := DuplicateResult{}
+	for index, candidate := range candidates {
+		if candidate.Hash == "" {
+			hash, hashErr := hashFile(candidate.SourcePath)
+			if hashErr != nil {
+				result.Skipped++
+				continue
+			}
+			if err := a.catalog.SaveFileHash(candidate.ID, hash); err != nil {
+				return result, err
+			}
+			result.Hashed++
+		}
+		if index%25 == 0 {
+			wailsruntime.EventsEmit(a.ctx, "duplicates:progress", map[string]any{"done": index + 1, "total": len(candidates)})
+		}
+	}
+	result.Groups, err = a.catalog.DuplicateGroups()
+	return result, err
+}
+
+func hashFile(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation string) error {

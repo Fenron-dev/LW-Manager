@@ -70,6 +70,24 @@ type SearchResult struct {
 	Total      int64        `json:"total"`
 }
 
+type HashCandidate struct {
+	ID, Size         int64
+	SourcePath, Hash string
+}
+
+type DuplicateFile struct {
+	ID       int64  `json:"id"`
+	Filename string `json:"filename"`
+	Path     string `json:"path"`
+	Drive    string `json:"drive"`
+}
+
+type DuplicateGroup struct {
+	Hash  string          `json:"hash"`
+	Size  int64           `json:"size"`
+	Files []DuplicateFile `json:"files"`
+}
+
 type DirectoryEntry struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
@@ -219,6 +237,59 @@ func (c *Catalog) Search(query, extension string, driveID int64, limit, offset i
 		result.Extensions = append(result.Extensions, value)
 	}
 	return result, extensionRows.Err()
+}
+
+func (c *Catalog) HashCandidates() ([]HashCandidate, error) {
+	rows, err := c.readDB.Query(`SELECT f.id,f.size,d.vault_path,f.path,COALESCE(f.content_hash,'')
+		FROM files f JOIN drives d ON d.id=f.drive_id
+		WHERE f.size IN (SELECT size FROM files GROUP BY size HAVING COUNT(*)>1)
+		ORDER BY f.size,f.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]HashCandidate, 0)
+	for rows.Next() {
+		var candidate HashCandidate
+		var root, relative string
+		if err := rows.Scan(&candidate.ID, &candidate.Size, &root, &relative, &candidate.Hash); err != nil {
+			return nil, err
+		}
+		candidate.SourcePath = filepath.Join(root, filepath.FromSlash(relative))
+		result = append(result, candidate)
+	}
+	return result, rows.Err()
+}
+
+func (c *Catalog) SaveFileHash(id int64, hash string) error {
+	_, err := c.db.Exec("UPDATE files SET content_hash=? WHERE id=?", hash, id)
+	return err
+}
+
+func (c *Catalog) DuplicateGroups() ([]DuplicateGroup, error) {
+	rows, err := c.readDB.Query(`SELECT f.content_hash,f.size,f.id,f.filename,f.path,COALESCE(NULLIF(d.display_name,''),d.label)
+		FROM files f JOIN drives d ON d.id=f.drive_id
+		WHERE f.content_hash IN (SELECT content_hash FROM files WHERE content_hash IS NOT NULL AND content_hash<>'' GROUP BY content_hash HAVING COUNT(*)>1)
+		ORDER BY f.content_hash,COALESCE(NULLIF(d.display_name,''),d.label),f.path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	groups := make([]DuplicateGroup, 0)
+	for rows.Next() {
+		var hash string
+		var size, id int64
+		var filename, path, drive string
+		if err := rows.Scan(&hash, &size, &id, &filename, &path, &drive); err != nil {
+			return nil, err
+		}
+		if len(groups) == 0 || groups[len(groups)-1].Hash != hash {
+			groups = append(groups, DuplicateGroup{Hash: hash, Size: size, Files: make([]DuplicateFile, 0, 2)})
+		}
+		group := &groups[len(groups)-1]
+		group.Files = append(group.Files, DuplicateFile{ID: id, Filename: filename, Path: path, Drive: drive})
+	}
+	return groups, rows.Err()
 }
 
 func (c *Catalog) Drives() ([]Drive, error) {
