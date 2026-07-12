@@ -370,7 +370,7 @@ func (c *Catalog) SearchArchive(snapshotID int64, query string, page, pageSize i
 	return result, rows.Err()
 }
 
-func (c *Catalog) CompareSnapshot(snapshotID int64, status, query string, page, pageSize int) (ComparisonResult, error) {
+func (c *Catalog) CompareSnapshot(ctx context.Context, snapshotID int64, status, query string, page, pageSize int) (ComparisonResult, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -395,10 +395,10 @@ func (c *Catalog) CompareSnapshot(snapshotID int64, status, query string, page, 
 	where := `(?='' OR status=?) AND LOWER(path) LIKE LOWER(?) ESCAPE '\'`
 	args := []any{snapshotID, snapshotID, status, status, pattern}
 	result := ComparisonResult{Entries: make([]ComparisonEntry, 0), Page: page, PageSize: pageSize}
-	if err := c.db.QueryRow("SELECT COUNT(*) FROM ("+comparison+") WHERE "+where, args...).Scan(&result.Total); err != nil {
+	if err := c.readDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+comparison+") WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := c.db.Query("SELECT path,status,current_name,current_size,current_modified,archive_name,archive_size,archive_modified FROM ("+comparison+") WHERE "+where+" ORDER BY path COLLATE NOCASE LIMIT ? OFFSET ?", append(args, pageSize, (page-1)*pageSize)...)
+	rows, err := c.readDB.QueryContext(ctx, "SELECT path,status,current_name,current_size,current_modified,archive_name,archive_size,archive_modified FROM ("+comparison+") WHERE "+where+" ORDER BY path COLLATE NOCASE LIMIT ? OFFSET ?", append(args, pageSize, (page-1)*pageSize)...)
 	if err != nil {
 		return result, err
 	}

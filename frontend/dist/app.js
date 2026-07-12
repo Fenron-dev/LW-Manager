@@ -284,7 +284,17 @@ async function loadComparison(page = 1) {
   if (!snapshotID) { $('#comparison-meta').textContent = 'Für diesen Datenträger ist noch kein Archivstand vorhanden.'; $('#comparison-results').replaceChildren(); return; }
   comparisonPage = Math.max(1,page);
   $('#comparison-meta').textContent = 'Vergleich wird berechnet …';
-  const result = await window.go.main.App.CompareSnapshot(snapshotID,$('#compare-status').value,$('#compare-query').value,comparisonPage);
+  $('#compare-button').disabled = true;
+  let result;
+  try {
+    result = await withTimeout(window.go.main.App.CompareSnapshot(snapshotID,$('#compare-status').value,$('#compare-query').value,comparisonPage),21000,'Zeitüberschreitung beim Archivvergleich');
+  } catch (error) {
+    $('#comparison-meta').textContent = `Vergleich fehlgeschlagen: ${error}`;
+    $('#comparison-results').replaceChildren();
+    return;
+  } finally {
+    $('#compare-button').disabled = false;
+  }
   comparisonPages = Math.max(1,Math.ceil(result.total/result.pageSize));
   $('#comparison-meta').textContent = `${result.total.toLocaleString('de-DE')} Einträge · Seite ${comparisonPage} von ${comparisonPages}`;
   const container=$('#comparison-results');container.replaceChildren();

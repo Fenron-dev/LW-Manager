@@ -64,4 +64,5 @@ CREATE TABLE IF NOT EXISTS archived_files (
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_drive ON scan_snapshots(drive_id);
 CREATE INDEX IF NOT EXISTS idx_archived_snapshot ON archived_files(snapshot_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_archived_snapshot_path ON archived_files(snapshot_id,path);
 CREATE INDEX IF NOT EXISTS idx_archived_name ON archived_files(filename);
