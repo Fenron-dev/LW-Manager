@@ -1,6 +1,6 @@
 # VaultApp
 
-Portable Desktop-Anwendung zur Katalogisierung externer Datenträger. Der aktuelle Stand ist das technische Fundament: Wails-Oberfläche, sichere Vault-Pfadlogik, Datenbankschema und vollständig cloudbasierte Builds.
+Portable Desktop-Anwendung zur Katalogisierung externer Datenträger. Der aktuelle Stand umfasst die Wails-Oberfläche, sichere Vault-Pfadlogik, einen rekursiven Metadaten-Scanner, den portablen SQLite-Katalog und vollständig cloudbasierte Builds.
 
 ## Builds ohne lokale Toolchain
 
@@ -18,8 +18,7 @@ Unter macOS muss `VaultApp.app` im heruntergeladenen Paket bleiben: Der portable
 
 ## Roadmap
 
-- Datenträger erkennen und auswählen
-- SQLite-Datenzugriff und Scan-Jobs
+- Hardware-Datenträger automatisch erkennen und eindeutig identifizieren
 - Bibliothek, Suche und Thumbnails
 - optionale lokale/entfernte KI-Anbieter
 

@@ -9,7 +9,7 @@
 <body>
   <aside>
     <div class="brand"><span>V</span> VaultApp</div>
-    <nav><button class="active">Übersicht</button><button>Scannen</button><button>Bibliothek</button><button>Datenträger</button></nav>
+    <nav><button class="active">Übersicht</button><button id="nav-scan">Scannen</button><button>Bibliothek</button><button>Datenträger</button></nav>
     <button class="settings">Einstellungen</button>
   </aside>
   <main>
@@ -19,11 +19,11 @@
       <div id="indicator" class="indicator">…</div>
     </section>
     <section class="grid">
-      <article><p class="eyebrow">DATEIEN</p><strong>0</strong><span>Noch kein Scan durchgeführt</span></article>
-      <article><p class="eyebrow">DATENTRÄGER</p><strong>0</strong><span>Keine Medien katalogisiert</span></article>
+      <article><p class="eyebrow">DATEIEN</p><strong id="file-count">0</strong><span id="file-caption">Noch kein Scan durchgeführt</span></article>
+      <article><p class="eyebrow">DATENTRÄGER</p><strong id="drive-count">0</strong><span id="drive-caption">Keine Medien katalogisiert</span></article>
       <article><p class="eyebrow">VAULT-PFAD</p><code id="root">–</code><span>Alle Daten bleiben portabel</span></article>
     </section>
-    <section class="empty"><div class="disc">◎</div><h2>Bereit für den ersten Scan</h2><p>Im nächsten Meilenstein werden angeschlossene Datenträger erkannt und katalogisiert.</p><button disabled>Datenträger scannen · folgt</button></section>
+    <section class="empty"><div class="disc">◎</div><h2 id="scan-title">Bereit für den ersten Scan</h2><p id="scan-detail">Wähle einen angeschlossenen Datenträger oder einen Ordner aus. Dateien werden nur gelesen, niemals verändert.</p><div class="progress" id="progress"><span></span></div><button id="scan-button">Datenträger oder Ordner scannen</button></section>
   </main>
   <script src="app.js"></script>
 </body>

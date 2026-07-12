@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS drives (
     model TEXT,
     total_size INTEGER,
     fs_type TEXT,
+    vault_path TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
