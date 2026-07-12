@@ -26,7 +26,10 @@ type DriveScan struct {
 	UsedSize    int64
 	UUID        string
 	FSType      string
+	Vendor      string
 	Model       string
+	Serial      string
+	DeviceType  string
 }
 
 type Drive struct {
@@ -38,6 +41,10 @@ type Drive struct {
 	Manufacturer    string `json:"manufacturer"`
 	DeviceType      string `json:"deviceType"`
 	StorageLocation string `json:"storageLocation"`
+	UUID            string `json:"uuid"`
+	Serial          string `json:"serial"`
+	Vendor          string `json:"vendor"`
+	DetectedType    string `json:"detectedType"`
 	FSType          string `json:"fsType"`
 	Model           string `json:"model"`
 	TotalSize       int64  `json:"totalSize"`
@@ -216,7 +223,7 @@ func (c *Catalog) Search(query, extension string, driveID int64, limit, offset i
 
 func (c *Catalog) Drives() ([]Drive, error) {
 	rows, err := c.db.Query(`SELECT d.id,d.label,COALESCE(d.display_name,''),COALESCE(d.inventory_number,''),COALESCE(d.vault_path,''),
-		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
+		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),d.uuid,COALESCE(d.serial,''),COALESCE(d.vendor,''),COALESCE(d.detected_type,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
 		FROM drives d LEFT JOIN files f ON f.drive_id=d.id GROUP BY d.id ORDER BY COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
@@ -225,7 +232,7 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	drives := make([]Drive, 0)
 	for rows.Next() {
 		var drive Drive
-		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
+		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
 			return nil, err
 		}
 		drives = append(drives, drive)
@@ -550,6 +557,8 @@ func (c *Catalog) migrate() error {
 	columns := map[string]string{
 		"display_name": "TEXT", "inventory_number": "TEXT", "manufacturer": "TEXT", "device_type": "TEXT",
 		"storage_location": "TEXT", "total_size": "INTEGER NOT NULL DEFAULT 0", "used_size": "INTEGER NOT NULL DEFAULT 0",
+		"serial": "TEXT", "vendor": "TEXT", "model": "TEXT", "fs_type": "TEXT",
+		"detected_type": "TEXT",
 	}
 	rows, err := c.db.Query("PRAGMA table_info(drives)")
 	if err != nil {
@@ -607,8 +616,8 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 			return err
 		}
 	}
-	if _, err = tx.Exec(`INSERT INTO drives(uuid,label,vault_path,total_size,used_size,fs_type,model,updated_at) VALUES(?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
-		ON CONFLICT(uuid) DO UPDATE SET label=excluded.label,vault_path=excluded.vault_path,total_size=excluded.total_size,used_size=excluded.used_size,fs_type=excluded.fs_type,model=excluded.model,updated_at=CURRENT_TIMESTAMP`, uuid, scan.Label, absolute, scan.TotalSize, scan.UsedSize, scan.FSType, scan.Model); err != nil {
+	if _, err = tx.Exec(`INSERT INTO drives(uuid,label,vault_path,total_size,used_size,fs_type,vendor,model,serial,detected_type,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+		ON CONFLICT(uuid) DO UPDATE SET label=excluded.label,vault_path=excluded.vault_path,total_size=excluded.total_size,used_size=excluded.used_size,fs_type=excluded.fs_type,vendor=excluded.vendor,model=excluded.model,serial=excluded.serial,detected_type=excluded.detected_type,updated_at=CURRENT_TIMESTAMP`, uuid, scan.Label, absolute, scan.TotalSize, scan.UsedSize, scan.FSType, scan.Vendor, scan.Model, scan.Serial, scan.DeviceType); err != nil {
 		return err
 	}
 	var driveID int64

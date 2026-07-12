@@ -4,6 +4,7 @@ package storage
 
 import (
 	"bytes"
+	"encoding/json"
 	"encoding/xml"
 	"os/exec"
 	"strings"
@@ -54,5 +55,65 @@ func Identify(path string) (Identity, error) {
 	if values["SolidState"] == "true" {
 		deviceType = strings.TrimSpace(deviceType + " SSD")
 	}
-	return Identity{UUID: values["VolumeUUID"], Label: values["VolumeName"], FSType: values["FilesystemType"], Model: values["MediaName"], DeviceType: deviceType}, nil
+	identity := Identity{UUID: values["VolumeUUID"], Label: values["VolumeName"], FSType: values["FilesystemType"], Model: values["MediaName"], DeviceType: deviceType}
+	device := values["ParentWholeDisk"]
+	if device == "" {
+		device = values["DeviceIdentifier"]
+	}
+	if device != "" {
+		identity.enrichDarwinHardware(device)
+	}
+	return identity, nil
+}
+
+func (identity *Identity) enrichDarwinHardware(device string) {
+	data, err := exec.Command("/usr/sbin/system_profiler", "SPUSBDataType", "-json", "-detailLevel", "mini").Output()
+	if err != nil {
+		return
+	}
+	var root any
+	if json.Unmarshal(data, &root) != nil {
+		return
+	}
+	if details, ok := findDarwinDevice(root, device); ok {
+		identity.Serial = firstString(details, "serial_num", "serial_number")
+		identity.Vendor = firstString(details, "manufacturer", "vendor_id")
+		if model := firstString(details, "_name", "model"); model != "" {
+			identity.Model = model
+		}
+	}
+}
+
+func findDarwinDevice(value any, device string) (map[string]any, bool) {
+	switch item := value.(type) {
+	case map[string]any:
+		matched := firstString(item, "bsd_name", "device_identifier") == device
+		for _, child := range item {
+			if details, ok := findDarwinDevice(child, device); ok {
+				for key, candidate := range item {
+					if _, exists := details[key]; !exists {
+						details[key] = candidate
+					}
+				}
+				return details, true
+			}
+		}
+		return item, matched
+	case []any:
+		for _, child := range item {
+			if details, ok := findDarwinDevice(child, device); ok {
+				return details, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func firstString(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := values[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

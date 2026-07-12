@@ -480,7 +480,13 @@ async function openDriveDialog(drive) {
   $('#edit-manufacturer').value = drive.manufacturer || '';
   $('#edit-device-type').value = drive.deviceType || '';
   await loadStorageLocations(drive.storageLocation || '');
-  $('#drive-dialog-path').textContent = `Erkannt als ${drive.label} · ${drive.path}`;
+  $('#drive-detail-uuid').textContent = drive.uuid || 'Nicht verfügbar';
+  $('#drive-detail-serial').textContent = drive.serial || 'Vom Datenträger nicht gemeldet';
+  $('#drive-detail-vendor').textContent = drive.vendor || 'Nicht verfügbar';
+  $('#drive-detail-model').textContent = drive.model || 'Nicht verfügbar';
+  $('#drive-detail-fstype').textContent = drive.fsType || 'Nicht verfügbar';
+  $('#drive-detail-connection').textContent = drive.detectedType || 'Nicht verfügbar';
+  $('#drive-detail-path').textContent = `${drive.label} · ${drive.path}`;
   $('#drive-save-status').textContent = '';
   $('#drive-dialog').showModal();
 }
