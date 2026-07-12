@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -53,6 +54,15 @@ type SearchResult struct {
 	Files      []FileResult `json:"files"`
 	Extensions []string     `json:"extensions"`
 	Total      int64        `json:"total"`
+}
+
+type DirectoryEntry struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	IsDir     bool   `json:"isDir"`
+	Size      int64  `json:"size"`
+	FileCount int64  `json:"fileCount"`
+	Extension string `json:"extension"`
 }
 
 func Open(path string) (*Catalog, error) {
@@ -161,6 +171,61 @@ func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufactur
 		return fmt.Errorf("Datenträger %d wurde nicht gefunden", id)
 	}
 	return nil
+}
+
+func (c *Catalog) Directory(driveID int64, directory string) ([]DirectoryEntry, error) {
+	directory = strings.Trim(strings.ReplaceAll(directory, `\`, "/"), "/")
+	if directory == ".." || strings.HasPrefix(directory, "../") || strings.Contains(directory, "/../") {
+		return nil, fmt.Errorf("ungültiger Verzeichnispfad")
+	}
+	prefix := ""
+	if directory != "" {
+		prefix = directory + "/"
+	}
+	rows, err := c.db.Query(`SELECT path,size,COALESCE(extension,'') FROM files WHERE drive_id=? AND path LIKE ? ESCAPE '\' ORDER BY path`, driveID, escapeLike(prefix)+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entries := map[string]*DirectoryEntry{}
+	for rows.Next() {
+		var path, extension string
+		var size int64
+		if err := rows.Scan(&path, &size, &extension); err != nil {
+			return nil, err
+		}
+		remainder := strings.TrimPrefix(path, prefix)
+		parts := strings.SplitN(remainder, "/", 2)
+		name := parts[0]
+		if name == "" {
+			continue
+		}
+		entry, exists := entries[name]
+		if !exists {
+			entry = &DirectoryEntry{Name: name, Path: prefix + name, IsDir: len(parts) == 2, Extension: extension}
+			entries[name] = entry
+		}
+		entry.Size += size
+		entry.FileCount++
+		if len(parts) == 2 {
+			entry.IsDir = true
+			entry.Extension = ""
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]DirectoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, *entry)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].IsDir != result[j].IsDir {
+			return result[i].IsDir
+		}
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+	return result, nil
 }
 
 func (c *Catalog) migrate() error {

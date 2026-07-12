@@ -75,7 +75,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.5.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.6.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -117,6 +117,13 @@ func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, 
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType)
+}
+
+func (a *App) BrowseDrive(id int64, directory string) ([]database.DirectoryEntry, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.Directory(id, directory)
 }
 
 // SelectAndScan catalogs metadata only. Source files are never modified.

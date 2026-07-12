@@ -22,6 +22,7 @@ Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet re
 
 - Hardware-Datenträger automatisch erkennen und eindeutig identifizieren
 - Thumbnails
+- optionale Duplikaterkennung per Inhalts-Hash
 - optionale lokale/entfernte KI-Anbieter
 
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.

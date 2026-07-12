@@ -200,11 +200,78 @@ async function loadDrives() {
     const edit = document.createElement('button');
     edit.className = 'secondary compact';
     edit.textContent = 'Bearbeiten';
-    edit.addEventListener('click', () => openDriveDialog(drive));
+    edit.addEventListener('click', (event) => { event.stopPropagation(); openDriveDialog(drive); });
     row.append(identity, kind, capacity, files, edit);
-    list.append(row);
+    const treePanel = document.createElement('div');
+    treePanel.className = 'drive-tree-panel hidden';
+    row.addEventListener('click', async () => {
+      const opening = treePanel.classList.contains('hidden');
+      treePanel.classList.toggle('hidden', !opening);
+      row.classList.toggle('expanded', opening);
+      if (opening && !treePanel.dataset.loaded) {
+        treePanel.dataset.loaded = 'true';
+        treePanel.textContent = 'Verzeichnisstruktur wird geladen …';
+        try {
+          treePanel.replaceChildren(await createDirectoryLevel(drive.id, '', 0, driveName(drive)));
+        } catch (error) { treePanel.textContent = `Verzeichnis kann nicht geladen werden: ${error}`; }
+      }
+    });
+    list.append(row, treePanel);
   }
   filter.value = [...filter.options].some((option) => option.value === selectedDrive) ? selectedDrive : '0';
+}
+
+async function createDirectoryLevel(driveID, directory, depth, driveLabel) {
+  const entries = await window.go.main.App.BrowseDrive(driveID, directory);
+  const level = document.createElement('div');
+  level.className = 'tree-level';
+  for (const entry of entries) {
+    const item = document.createElement('div');
+    item.className = `tree-item ${entry.isDir ? 'tree-directory' : 'tree-file'}`;
+    item.style.setProperty('--depth', depth);
+    const toggle = document.createElement('span');
+    toggle.className = 'tree-toggle';
+    toggle.textContent = entry.isDir ? '›' : '·';
+    const icon = document.createElement('span');
+    icon.className = 'tree-icon';
+    icon.textContent = entry.isDir ? '▰' : '▪';
+    const name = document.createElement('span');
+    name.className = 'tree-name';
+    name.textContent = entry.name;
+    name.title = entry.path;
+    const meta = document.createElement('span');
+    meta.className = 'tree-meta';
+    meta.textContent = entry.isDir ? `${entry.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(entry.size)}` : `${entry.extension ? `.${entry.extension} · ` : ''}${formatBytes(entry.size)}`;
+    item.append(toggle, icon, name, meta);
+    level.append(item);
+    if (entry.isDir) {
+      const children = document.createElement('div');
+      children.className = 'tree-children hidden';
+      item.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const opening = children.classList.contains('hidden');
+        children.classList.toggle('hidden', !opening);
+        toggle.textContent = opening ? '⌄' : '›';
+        if (opening && !children.dataset.loaded) {
+          children.dataset.loaded = 'true';
+          children.append(await createDirectoryLevel(driveID, entry.path, depth + 1, driveLabel));
+        }
+      });
+      level.append(children);
+    } else {
+      item.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openFileDialog({filename: entry.name, drive: driveLabel, path: entry.path, extension: entry.extension, mimeType: '', size: entry.size, modified: ''});
+      });
+    }
+  }
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'tree-empty';
+    empty.textContent = 'Dieser Ordner ist leer.';
+    level.append(empty);
+  }
+  return level;
 }
 
 function openDriveDialog(drive) {
