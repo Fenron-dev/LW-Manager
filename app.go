@@ -40,6 +40,14 @@ type ScanResult struct {
 	Message   string `json:"message"`
 }
 
+type LibraryResult struct {
+	Files      []database.FileResult `json:"files"`
+	Extensions []string              `json:"extensions"`
+	Total      int64                 `json:"total"`
+	Page       int                   `json:"page"`
+	PageSize   int                   `json:"pageSize"`
+}
+
 func NewApp() *App { return &App{} }
 
 func (a *App) Startup(ctx context.Context) {
@@ -66,7 +74,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.2.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.3.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -79,6 +87,21 @@ func (a *App) GetAppInfo() AppInfo {
 	info.Ready, info.Message = true, "Vault und Katalog sind bereit"
 	info.FileCount, info.DriveCount = files, drives
 	return info
+}
+
+func (a *App) SearchFiles(query, extension string, page int) (LibraryResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return LibraryResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if page < 1 {
+		page = 1
+	}
+	const pageSize = 50
+	result, err := a.catalog.Search(query, extension, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return LibraryResult{}, err
+	}
+	return LibraryResult{Files: result.Files, Extensions: result.Extensions, Total: result.Total, Page: page, PageSize: pageSize}, nil
 }
 
 // SelectAndScan catalogs metadata only. Source files are never modified.
