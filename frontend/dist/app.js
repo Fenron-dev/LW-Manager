@@ -534,7 +534,7 @@ function openFileDialog(file) {
   const previewStatus = $('#preview-status');
   preview.removeAttribute('src');
   preview.classList.add('hidden');
-  const previewable = file.id && (file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif'].includes((file.extension || '').toLowerCase()));
+  const previewable = file.id && (file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes((file.extension || '').toLowerCase()));
   previewWrap.classList.toggle('hidden', !previewable);
   if (previewable) {
     previewStatus.classList.remove('hidden');

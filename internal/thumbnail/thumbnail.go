@@ -13,6 +13,7 @@ import (
 )
 
 const maxSourceSize = 100 << 20
+const maxDirectSize = 25 << 20
 
 func DataURL(source, cacheDir, identity string) (string, error) {
 	info, err := os.Stat(source)
@@ -21,6 +22,16 @@ func DataURL(source, cacheDir, identity string) (string, error) {
 	}
 	if info.Size() > maxSourceSize {
 		return "", fmt.Errorf("Bild ist größer als 100 MB")
+	}
+	if filepath.Ext(source) == ".webp" || filepath.Ext(source) == ".WEBP" {
+		if info.Size() > maxDirectSize {
+			return "", fmt.Errorf("WebP-Vorschau ist größer als 25 MB")
+		}
+		data, err := os.ReadFile(source)
+		if err != nil {
+			return "", err
+		}
+		return encodeMIME(data, "image/webp"), nil
 	}
 	key := fmt.Sprintf("%x", sha256.Sum256([]byte(source+identity)))
 	cachePath := filepath.Join(cacheDir, key+".jpg")
@@ -94,5 +105,9 @@ func fit(width, height, maxWidth, maxHeight int) (int, int) {
 }
 
 func encode(data []byte) string {
-	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(data)
+	return encodeMIME(data, "image/jpeg")
+}
+
+func encodeMIME(data []byte, mimeType string) string {
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
 }
