@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultApp</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside>
+    <div class="brand"><span>V</span> VaultApp</div>
+    <nav><button class="active">Übersicht</button><button>Scannen</button><button>Bibliothek</button><button>Datenträger</button></nav>
+    <button class="settings">Einstellungen</button>
+  </aside>
+  <main>
+    <header><div><p class="eyebrow">PORTABLE MEDIENBIBLIOTHEK</p><h1>Dein Vault auf einen Blick</h1></div><span id="platform" class="pill">wird geladen …</span></header>
+    <section class="hero">
+      <div><p class="eyebrow">SYSTEMSTATUS</p><h2 id="status">Vault wird geprüft</h2><p id="message">Die lokale Verzeichnisstruktur wird vorbereitet.</p></div>
+      <div id="indicator" class="indicator">…</div>
+    </section>
+    <section class="grid">
+      <article><p class="eyebrow">DATEIEN</p><strong>0</strong><span>Noch kein Scan durchgeführt</span></article>
+      <article><p class="eyebrow">DATENTRÄGER</p><strong>0</strong><span>Keine Medien katalogisiert</span></article>
+      <article><p class="eyebrow">VAULT-PFAD</p><code id="root">–</code><span>Alle Daten bleiben portabel</span></article>
+    </section>
+    <section class="empty"><div class="disc">◎</div><h2>Bereit für den ersten Scan</h2><p>Im nächsten Meilenstein werden angeschlossene Datenträger erkannt und katalogisiert.</p><button disabled>Datenträger scannen · folgt</button></section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

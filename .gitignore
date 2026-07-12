@@ -1,0 +1,8 @@
+build/bin/
+frontend/node_modules/
+data/
+assets/models/*.gguf
+*.db
+*.db-journal
+*.log
+.DS_Store

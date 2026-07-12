@@ -1,0 +1,10 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "VaultApp",
+  "outputfilename": "VaultApp",
+  "frontend:dir": "frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "author": {"name": "VaultApp Contributors"},
+  "info": {"productName": "VaultApp", "productVersion": "0.1.0", "copyright": "Copyright 2026"}
+}
