@@ -7,7 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,6 +22,23 @@ func Identify(path string) (Identity, error) {
 	if err != nil {
 		return Identity{}, err
 	}
+	values := darwinPlistValues(data)
+	deviceType := values["BusProtocol"]
+	if values["SolidState"] == "true" {
+		deviceType = strings.TrimSpace(deviceType + " SSD")
+	}
+	identity := Identity{UUID: values["VolumeUUID"], Label: values["VolumeName"], FSType: values["FilesystemType"], Model: values["MediaName"], DeviceType: deviceType}
+	device := values["ParentWholeDisk"]
+	if device == "" {
+		device = values["DeviceIdentifier"]
+	}
+	if device != "" {
+		identity.enrichDarwinHardware(device)
+	}
+	return identity, nil
+}
+
+func darwinPlistValues(data []byte) map[string]string {
 	values := map[string]string{}
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	current := ""
@@ -55,19 +75,37 @@ func Identify(path string) (Identity, error) {
 			}
 		}
 	}
-	deviceType := values["BusProtocol"]
-	if values["SolidState"] == "true" {
-		deviceType = strings.TrimSpace(deviceType + " SSD")
+	return values
+}
+
+func ListVolumes() ([]Volume, error) {
+	entries, err := os.ReadDir("/Volumes")
+	if err != nil {
+		return nil, err
 	}
-	identity := Identity{UUID: values["VolumeUUID"], Label: values["VolumeName"], FSType: values["FilesystemType"], Model: values["MediaName"], DeviceType: deviceType}
-	device := values["ParentWholeDisk"]
-	if device == "" {
-		device = values["DeviceIdentifier"]
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	volumes := make([]Volume, 0, len(entries))
+	for _, entry := range entries {
+		path := filepath.Join("/Volumes", entry.Name())
+		data, commandErr := exec.CommandContext(ctx, "/usr/sbin/diskutil", "info", "-plist", path).Output()
+		if commandErr != nil {
+			continue
+		}
+		values := darwinPlistValues(data)
+		external := values["Internal"] == "false" || values["Removable"] == "true" || values["Ejectable"] == "true"
+		if !external || values["MountPoint"] == "" {
+			continue
+		}
+		total, used, _ := Usage(path)
+		label := values["VolumeName"]
+		if label == "" {
+			label = entry.Name()
+		}
+		volumes = append(volumes, Volume{Path: path, Label: label, UUID: values["VolumeUUID"], FSType: values["FilesystemType"], TotalSize: total, UsedSize: used, External: true})
 	}
-	if device != "" {
-		identity.enrichDarwinHardware(device)
-	}
-	return identity, nil
+	sort.Slice(volumes, func(i, j int) bool { return strings.ToLower(volumes[i].Label) < strings.ToLower(volumes[j].Label) })
+	return volumes, nil
 }
 
 func (identity *Identity) enrichDarwinHardware(device string) {

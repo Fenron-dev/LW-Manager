@@ -51,3 +51,33 @@ func Identify(path string) (Identity, error) {
 	}
 	return identity, nil
 }
+
+func ListVolumes() ([]Volume, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	script := `$items = Get-Partition | Where-Object DriveLetter | ForEach-Object { $p=$_; $d=$p | Get-Disk; $v=Get-Volume -DriveLetter $p.DriveLetter; if ($d.BusType -in @('USB','SD','MMC') -or $v.DriveType -eq 'Removable') { $logical=Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='"+$p.DriveLetter+":'"); [PSCustomObject]@{Path=($p.DriveLetter+':\\'); Label=$v.FileSystemLabel; UUID=$logical.VolumeSerialNumber; FSType=$v.FileSystem; Total=[int64]$v.Size; Used=[int64]($v.Size-$v.SizeRemaining)} } }; @($items) | ConvertTo-Json -Compress`
+	data, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output()
+	if err != nil {
+		return nil, err
+	}
+	var items []struct {
+		Path   string `json:"Path"`
+		Label  string `json:"Label"`
+		UUID   string `json:"UUID"`
+		FSType string `json:"FSType"`
+		Total  int64  `json:"Total"`
+		Used   int64  `json:"Used"`
+	}
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, err
+	}
+	volumes := make([]Volume, 0, len(items))
+	for _, item := range items {
+		label := strings.TrimSpace(item.Label)
+		if label == "" {
+			label = item.Path
+		}
+		volumes = append(volumes, Volume{Path: item.Path, Label: label, UUID: item.UUID, FSType: item.FSType, TotalSize: item.Total, UsedSize: item.Used, External: true})
+	}
+	return volumes, nil
+}

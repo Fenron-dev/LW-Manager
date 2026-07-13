@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,6 +50,11 @@ type ScanResult struct {
 	Bytes     int64  `json:"bytes"`
 	Skipped   int    `json:"skipped"`
 	Message   string `json:"message"`
+}
+
+type ConnectedVolumes struct {
+	Enabled bool             `json:"enabled"`
+	Volumes []storage.Volume `json:"volumes"`
 }
 
 type DuplicateResult struct {
@@ -99,7 +105,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.23.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.24.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -134,6 +140,20 @@ func (a *App) GetDrives() ([]database.Drive, error) {
 		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.Drives()
+}
+
+func (a *App) GetConnectedVolumes() (ConnectedVolumes, error) {
+	settings := a.currentSettings()
+	result := ConnectedVolumes{Enabled: settings.VolumeDetectionEnabled, Volumes: []storage.Volume{}}
+	if !result.Enabled {
+		return result, nil
+	}
+	volumes, err := storage.ListVolumes()
+	if err != nil {
+		return result, fmt.Errorf("angeschlossene Datenträger erkennen: %w", err)
+	}
+	result.Volumes = volumes
+	return result, nil
 }
 
 func (a *App) FindDuplicates() (DuplicateResult, error) {
@@ -317,6 +337,32 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 	if selected == "" {
 		return ScanResult{Cancelled: true, Message: "Scan abgebrochen"}, nil
 	}
+	return a.scanPath(selected)
+}
+
+// ScanVolume starts a scan only for a path reported by the current volume list.
+func (a *App) ScanVolume(path string) (ScanResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return ScanResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if !a.currentSettings().VolumeDetectionEnabled {
+		return ScanResult{}, fmt.Errorf("automatische Datenträgererkennung ist deaktiviert")
+	}
+	volumes, err := storage.ListVolumes()
+	if err != nil {
+		return ScanResult{}, fmt.Errorf("angeschlossene Datenträger erkennen: %w", err)
+	}
+	requested := filepath.Clean(path)
+	for _, volume := range volumes {
+		candidate := filepath.Clean(volume.Path)
+		if requested == candidate || (goruntime.GOOS == "windows" && strings.EqualFold(requested, candidate)) {
+			return a.scanPath(candidate)
+		}
+	}
+	return ScanResult{}, fmt.Errorf("Datenträger ist nicht mehr angeschlossen oder wurde nicht erkannt")
+}
+
+func (a *App) scanPath(selected string) (ScanResult, error) {
 
 	a.scanMu.Lock()
 	defer a.scanMu.Unlock()

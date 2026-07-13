@@ -93,6 +93,7 @@ async function showSettings() {
   $('#settings-status').textContent = '';
   try {
     const settings = await window.go.main.App.GetSettings();
+    $('#setting-volume-detection').checked = settings.volumeDetectionEnabled;
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
     $('#setting-image-analysis-enabled').checked = settings.imageAnalysisEnabled;
@@ -132,7 +133,8 @@ async function saveSettings() {
   button.disabled = true;
   try {
     await window.go.main.App.SaveSettings({
-      version: 4,
+      version: 5,
+      volumeDetectionEnabled: $('#setting-volume-detection').checked,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked,
@@ -211,19 +213,19 @@ async function loadInfo() {
   }
 }
 
-async function startScan() {
+async function runScan(scanAction, preparingMessage) {
   showOverview();
   scanButton.disabled = true;
   $('#scan-title').textContent = 'Scan wird vorbereitet …';
-  $('#scan-detail').textContent = 'Bitte den nativen Auswahldialog verwenden.';
+  $('#scan-detail').textContent = preparingMessage;
   $('#progress').classList.add('active');
   try {
-    const result = await window.go.main.App.SelectAndScan();
+    const result = await scanAction();
     if (!result.cancelled) {
       $('#scan-title').textContent = `${result.files.toLocaleString('de-DE')} Dateien katalogisiert`;
       $('#scan-detail').textContent = `${formatBytes(result.bytes)} erfasst · ${result.skipped} Einträge übersprungen`;
       extensionsLoaded = false;
-      await loadInfo();
+      await Promise.all([loadInfo(), loadDrives()]);
     }
   } catch (error) {
     $('#scan-title').textContent = 'Scan fehlgeschlagen';
@@ -232,6 +234,14 @@ async function startScan() {
     $('#progress').classList.remove('active');
     scanButton.disabled = false;
   }
+}
+
+async function startScan() {
+  return runScan(() => window.go.main.App.SelectAndScan(), 'Bitte den nativen Auswahldialog verwenden.');
+}
+
+async function startVolumeScan(volume) {
+  return runScan(() => window.go.main.App.ScanVolume(volume.path), `${volume.label || volume.path} wird vorbereitet.`);
 }
 
 function renderFiles(files) {
@@ -308,6 +318,7 @@ function driveName(drive) {
 
 async function loadDrives() {
   const drives = await window.go.main.App.GetDrives();
+  await loadConnectedVolumes(drives);
   const list = $('#drive-list');
   list.replaceChildren();
   $('#drives-empty').classList.toggle('hidden', drives.length !== 0);
@@ -386,6 +397,65 @@ async function loadDrives() {
   }
   filter.value = [...filter.options].some((option) => option.value === selectedDrive) ? selectedDrive : '0';
   compareDrive.value = [...compareDrive.options].some((option) => option.value === selectedCompareDrive) ? selectedCompareDrive : '0';
+}
+
+function sameVolume(drive, volume) {
+  const driveUUID = String(drive.uuid || '').toLowerCase().replace(/^volume:/, '');
+  const volumeUUID = String(volume.uuid || '').toLowerCase().replace(/^volume:/, '');
+  if (driveUUID && volumeUUID && driveUUID === volumeUUID) return true;
+  return String(drive.path || '').replace(/[\\/]+$/, '').toLowerCase() === String(volume.path || '').replace(/[\\/]+$/, '').toLowerCase();
+}
+
+async function loadConnectedVolumes(drives = []) {
+  const list = $('#connected-volume-list');
+  const empty = $('#connected-volumes-empty');
+  list.replaceChildren();
+  empty.classList.remove('hidden');
+  empty.textContent = 'Angeschlossene Datenträger werden gesucht …';
+  try {
+    const result = await window.go.main.App.GetConnectedVolumes();
+    if (!result.enabled) {
+      empty.textContent = 'Die automatische Datenträgererkennung ist in den Einstellungen deaktiviert.';
+      return;
+    }
+    const volumes = result.volumes || [];
+    empty.classList.toggle('hidden', volumes.length !== 0);
+    empty.textContent = 'Keine externen Datenträger erkannt.';
+    for (const volume of volumes) {
+      const known = drives.find((drive) => sameVolume(drive, volume));
+      const row = document.createElement('div');
+      row.className = 'connected-volume-row';
+      const identity = document.createElement('div');
+      identity.className = 'drive-identity';
+      const name = document.createElement('strong');
+      name.textContent = volume.label || volume.path;
+      const path = document.createElement('span');
+      path.textContent = [volume.path, volume.fsType].filter(Boolean).join(' · ');
+      identity.append(name, path);
+      const capacity = document.createElement('div');
+      capacity.className = 'drive-capacity';
+      const capacityText = document.createElement('span');
+      capacityText.textContent = volume.totalSize ? `${formatBytes(volume.usedSize)} von ${formatBytes(volume.totalSize)} belegt` : 'Kapazität unbekannt';
+      const bar = document.createElement('div');
+      bar.className = 'capacity-bar';
+      const fill = document.createElement('span');
+      fill.style.width = volume.totalSize ? `${Math.min(100, volume.usedSize / volume.totalSize * 100)}%` : '0%';
+      bar.append(fill);
+      capacity.append(capacityText, bar);
+      const state = document.createElement('span');
+      state.className = `volume-state ${known ? 'known' : ''}`;
+      state.textContent = known ? `Katalogisiert als ${driveName(known)}` : 'Noch nicht katalogisiert';
+      const scan = document.createElement('button');
+      scan.className = 'compact';
+      scan.textContent = known ? 'Neu scannen' : 'Scannen';
+      scan.addEventListener('click', () => startVolumeScan(volume));
+      row.append(identity, capacity, state, scan);
+      list.append(row);
+    }
+  } catch (error) {
+    empty.classList.remove('hidden');
+    empty.textContent = `Datenträgererkennung fehlgeschlagen: ${error}`;
+  }
 }
 
 async function loadComparisonSnapshots() {
@@ -828,6 +898,11 @@ $('#save-settings-button').addEventListener('click', saveSettings);
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#drive-scan-button').addEventListener('click', startScan);
+$('#refresh-volumes-button').addEventListener('click', async () => {
+  const button = $('#refresh-volumes-button');
+  button.disabled = true;
+  try { await loadDrives(); } finally { button.disabled = false; }
+});
 $('#search-button').addEventListener('click', () => loadLibrary(1));
 $('#search-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadLibrary(1); });
 $('#extension-filter').addEventListener('change', () => loadLibrary(1));

@@ -9,6 +9,7 @@ import (
 
 type Settings struct {
 	Version                  int  `json:"version"`
+	VolumeDetectionEnabled   bool `json:"volumeDetectionEnabled"`
 	ArchiveEnabled           bool `json:"archiveEnabled"`
 	MaxSnapshots             int  `json:"maxSnapshots"`
 	ImageAnalysisEnabled     bool `json:"imageAnalysisEnabled"`
@@ -43,7 +44,7 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 4, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 5, VolumeDetectionEnabled: true, ArchiveEnabled: true, MaxSnapshots: 10,
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
 		EXIFFileMB: 8, EXIFTotalMB: 256, EXIFTotalUnlimited: true,
@@ -75,7 +76,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 4
+	settings.Version = 5
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err

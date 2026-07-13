@@ -24,6 +24,10 @@ main > *,
   overflow-x: auto;
 }
 
+.connected-volume-list {
+  min-width: 0;
+}
+
 .modal {
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 32px);
@@ -129,6 +133,14 @@ main > *,
   .drive-row {
     min-width: 760px;
   }
+
+  .connected-volume-row {
+    grid-template-columns: minmax(180px, 1fr) minmax(170px, 1fr) auto;
+  }
+
+  .connected-volume-row .volume-state {
+    display: none;
+  }
 }
 
 @media (max-width: 850px) {
@@ -152,8 +164,17 @@ main > *,
 
   .duplicate-group-head,
   .drive-intro,
+  .connected-volume-heading,
   .library-meta {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .connected-volume-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .connected-volume-row .drive-capacity {
+    display: none;
   }
 }

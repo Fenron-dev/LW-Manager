@@ -12,7 +12,7 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !settings.ArchiveEnabled || settings.MaxSnapshots != 10 {
+	if !settings.VolumeDetectionEnabled || !settings.ArchiveEnabled || settings.MaxSnapshots != 10 {
 		t.Fatalf("unexpected defaults: %+v", settings)
 	}
 	if !settings.ImageAnalysisEnabled || !settings.ImageJPEGEnabled || !settings.ImagePNGEnabled || !settings.ImageGIFEnabled || settings.ImageHeaderMB != 4 {
@@ -43,7 +43,7 @@ func TestLoadAddsDefaultsToOlderConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.ArchiveEnabled || !settings.ImageAnalysisEnabled || settings.ImageHeaderMB != 4 || !settings.ThumbnailCacheUnlimited {
+	if settings.ArchiveEnabled || !settings.VolumeDetectionEnabled || !settings.ImageAnalysisEnabled || settings.ImageHeaderMB != 4 || !settings.ThumbnailCacheUnlimited {
 		t.Fatalf("legacy migration lost values or defaults: %+v", settings)
 	}
 }
