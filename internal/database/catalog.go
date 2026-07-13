@@ -228,7 +228,7 @@ func (c *Catalog) Search(query, extension string, driveID int64, limit, offset i
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
-	extensionRows, err := c.db.Query(`SELECT extension FROM files WHERE extension IS NOT NULL AND extension <> '' GROUP BY extension ORDER BY COUNT(*) DESC,extension LIMIT 100`)
+	extensionRows, err := c.db.Query(`SELECT extension FROM files WHERE extension IS NOT NULL AND extension <> '' GROUP BY extension ORDER BY extension COLLATE NOCASE LIMIT 250`)
 	if err != nil {
 		return result, err
 	}

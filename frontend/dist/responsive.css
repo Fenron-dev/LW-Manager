@@ -1,0 +1,159 @@
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+}
+
+main,
+main > *,
+.library,
+.drives,
+.archive-view {
+  min-width: 0;
+}
+
+.file-table,
+.comparison-table,
+.comparison-tree,
+.drive-list {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.modal {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+
+.modal form {
+  max-height: calc(100vh - 34px);
+  overflow-y: auto;
+}
+
+#duplicate-dialog form {
+  display: flex;
+  flex-direction: column;
+}
+
+.duplicate-toolbar {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.duplicate-toolbar input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #2b394c;
+  border-radius: 9px;
+  background: #0d151f;
+  color: #eaf0f7;
+  font: inherit;
+}
+
+.duplicate-group {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #293648;
+  border-radius: 11px;
+  background: #0d151f;
+}
+
+.duplicate-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 9px;
+  color: #dce7f2;
+}
+
+.duplicate-group-head span {
+  flex: none;
+  color: #7f92a7;
+  font-size: 12px;
+}
+
+.duplicate-file {
+  display: grid !important;
+  grid-template-columns: minmax(100px, 160px) minmax(0, 1fr);
+  width: 100%;
+  margin: 6px 0 0 !important;
+  padding: 9px 11px !important;
+  text-align: left;
+}
+
+.duplicate-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duplicate-file span:first-child {
+  color: #55d6be;
+}
+
+.duplicate-pagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 1200px) {
+  main {
+    padding: 32px 24px;
+  }
+
+  .searchbar,
+  .compare-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 1fr);
+  }
+
+  #search-input,
+  #compare-query {
+    grid-column: 1 / -1;
+  }
+
+  .file-row {
+    min-width: 850px;
+  }
+
+  .drive-row {
+    min-width: 760px;
+  }
+}
+
+@media (max-width: 850px) {
+  body {
+    display: block;
+  }
+
+  main {
+    padding: 22px 16px;
+  }
+
+  .searchbar,
+  .compare-controls,
+  .duplicate-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .duplicate-file {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .duplicate-group-head,
+  .drive-intro,
+  .library-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

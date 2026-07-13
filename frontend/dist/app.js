@@ -10,6 +10,9 @@ let archivePages = 1;
 let comparisonPage = 1;
 let comparisonPages = 1;
 let comparisonMode = 'list';
+let duplicateGroups = [];
+let duplicatePage = 1;
+const duplicatePageSize = 25;
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -221,7 +224,7 @@ async function loadLibrary(page = 1) {
       const filter = $('#extension-filter');
       const selected = filter.value;
       filter.replaceChildren(new Option('Alle Dateitypen', ''));
-      result.extensions.forEach((extension) => filter.add(new Option(`.${extension}`, extension)));
+      result.extensions.sort((left, right) => left.localeCompare(right, 'de', {sensitivity: 'base'})).forEach((extension) => filter.add(new Option(`.${extension}`, extension)));
       filter.value = selected;
       extensionsLoaded = true;
     }
@@ -640,6 +643,7 @@ async function findDuplicates() {
   button.disabled = true;
   $('#duplicate-status').textContent = 'Dateien gleicher Größe werden per SHA-256 geprüft …';
   $('#duplicate-results').replaceChildren();
+  ensureDuplicateControls();
   $('#duplicate-dialog').showModal();
   try {
     const result = await window.go.main.App.FindDuplicates();
@@ -647,29 +651,89 @@ async function findDuplicates() {
     $('#duplicate-status').textContent = result.groups.length
       ? `${result.groups.length.toLocaleString('de-DE')} Gruppen mit ${duplicateFiles.toLocaleString('de-DE')} Dateien gefunden${result.skipped ? ` · ${result.skipped} nicht erreichbar` : ''}.`
       : `Keine inhaltlich identischen Dateien gefunden${result.skipped ? ` · ${result.skipped} nicht erreichbar` : ''}.`;
-    const container = $('#duplicate-results');
-    for (const group of result.groups) {
-      const card = document.createElement('section');
-      card.className = 'snapshot-card';
-      const title = document.createElement('strong');
-      title.textContent = `${group.files.length} identische Dateien · je ${formatBytes(group.size)}`;
-      card.append(title);
-      for (const file of group.files) {
-        const entry = document.createElement('button');
-        entry.type = 'button';
-        entry.className = 'secondary';
-        entry.textContent = `${file.drive} · ${file.path}`;
-        entry.title = file.path;
-        entry.addEventListener('click', () => openFileDialog({id: file.id, filename: file.filename, drive: file.drive, path: file.path, size: group.size, extension: '', mimeType: '', modified: ''}));
-        card.append(entry);
-      }
-      container.append(card);
-    }
+    duplicateGroups = result.groups;
+    duplicatePage = 1;
+    renderDuplicateGroups();
   } catch (error) {
     $('#duplicate-status').textContent = `Duplikatprüfung fehlgeschlagen: ${error}`;
   } finally {
     button.disabled = false;
   }
+}
+
+function ensureDuplicateControls() {
+  if ($('#duplicate-filter')) return;
+  const toolbar = document.createElement('div');
+  toolbar.className = 'duplicate-toolbar';
+  const filter = document.createElement('input');
+  filter.id = 'duplicate-filter';
+  filter.type = 'search';
+  filter.placeholder = 'Datenträger oder Pfad filtern …';
+  const pageLabel = document.createElement('span');
+  pageLabel.id = 'duplicate-page-label';
+  toolbar.append(filter, pageLabel);
+  $('#duplicate-results').before(toolbar);
+  const pagination = document.createElement('div');
+  pagination.className = 'duplicate-pagination';
+  const previous = document.createElement('button');
+  previous.type = 'button';
+  previous.className = 'secondary';
+  previous.textContent = '← Zurück';
+  previous.addEventListener('click', () => { duplicatePage--; renderDuplicateGroups(); });
+  const next = document.createElement('button');
+  next.type = 'button';
+  next.className = 'secondary';
+  next.textContent = 'Weiter →';
+  next.addEventListener('click', () => { duplicatePage++; renderDuplicateGroups(); });
+  pagination.append(previous, next);
+  pagination.dataset.role = 'duplicate-pagination';
+  $('#duplicate-results').after(pagination);
+  filter.addEventListener('input', () => { duplicatePage = 1; renderDuplicateGroups(); });
+}
+
+function renderDuplicateGroups() {
+  const query = ($('#duplicate-filter')?.value || '').trim().toLocaleLowerCase('de');
+  const groups = query ? duplicateGroups.filter((group) => group.files.some((file) => `${file.drive} ${file.path}`.toLocaleLowerCase('de').includes(query))) : duplicateGroups;
+  const pages = Math.max(1, Math.ceil(groups.length / duplicatePageSize));
+  duplicatePage = Math.max(1, Math.min(duplicatePage, pages));
+  const container = $('#duplicate-results');
+  container.replaceChildren();
+  for (const group of groups.slice((duplicatePage - 1) * duplicatePageSize, duplicatePage * duplicatePageSize)) {
+    const card = document.createElement('section');
+    card.className = 'duplicate-group';
+    const heading = document.createElement('div');
+    heading.className = 'duplicate-group-head';
+    const title = document.createElement('strong');
+    title.textContent = `${group.files.length} identische Dateien`;
+    const meta = document.createElement('span');
+    meta.textContent = `${formatBytes(group.size)} je Datei · ${formatBytes(group.size * (group.files.length - 1))} zusätzlich belegt`;
+    heading.append(title, meta);
+    card.append(heading);
+    for (const file of group.files) {
+      const entry = document.createElement('button');
+      entry.type = 'button';
+      entry.className = 'secondary duplicate-file';
+      const drive = document.createElement('span');
+      drive.textContent = file.drive;
+      const path = document.createElement('span');
+      path.textContent = file.path;
+      path.title = file.path;
+      entry.append(drive, path);
+      entry.addEventListener('click', () => openFileDialog({id: file.id, filename: file.filename, drive: file.drive, path: file.path, size: group.size, extension: '', mimeType: '', modified: ''}));
+      card.append(entry);
+    }
+    container.append(card);
+  }
+  if (!groups.length) {
+    const empty = document.createElement('div');
+    empty.className = 'library-empty';
+    empty.textContent = 'Keine Duplikatgruppe passt zum Filter.';
+    container.append(empty);
+  }
+  $('#duplicate-page-label').textContent = `${groups.length.toLocaleString('de-DE')} Gruppen · Seite ${duplicatePage} von ${pages}`;
+  const pagination = document.querySelector('[data-role="duplicate-pagination"]');
+  pagination.children[0].disabled = duplicatePage <= 1;
+  pagination.children[1].disabled = duplicatePage >= pages;
 }
 
 window.runtime.EventsOn('scan:progress', (event) => {
