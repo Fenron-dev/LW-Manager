@@ -10,6 +10,12 @@ import (
 type Settings struct {
 	Version                  int  `json:"version"`
 	VolumeDetectionEnabled   bool `json:"volumeDetectionEnabled"`
+	BackupEnabled            bool `json:"backupEnabled"`
+	BackupIncludeThumbnails  bool `json:"backupIncludeThumbnails"`
+	BackupFileMB             int  `json:"backupFileMB"`
+	BackupFileUnlimited      bool `json:"backupFileUnlimited"`
+	BackupMaxMB              int  `json:"backupMaxMB"`
+	BackupUnlimited          bool `json:"backupUnlimited"`
 	ArchiveEnabled           bool `json:"archiveEnabled"`
 	MaxSnapshots             int  `json:"maxSnapshots"`
 	ImageAnalysisEnabled     bool `json:"imageAnalysisEnabled"`
@@ -46,7 +52,7 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 6, VolumeDetectionEnabled: true, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 7, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
 		EXIFFileMB: 8, EXIFTotalMB: 256, EXIFTotalUnlimited: true,
@@ -78,7 +84,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 6
+	settings.Version = 7
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -100,6 +106,12 @@ func Save(path string, settings Settings) error {
 func (settings Settings) Validate() error {
 	if settings.MaxSnapshots < 0 || settings.MaxSnapshots > 100 {
 		return fmt.Errorf("maximale Archivstände müssen zwischen 0 und 100 liegen")
+	}
+	if settings.BackupMaxMB < 1 || settings.BackupMaxMB > 1_000_000 {
+		return fmt.Errorf("Backup-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.BackupFileMB < 1 || settings.BackupFileMB > 1_000_000 {
+		return fmt.Errorf("Backup-Dateilimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.ImagePreviewMB < 1 || settings.ImagePreviewMB > 100 {
 		return fmt.Errorf("Bildlimit muss zwischen 1 und 100 MB liegen")

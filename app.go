@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dennis/vaultapp/internal/backup"
 	appconfig "github.com/dennis/vaultapp/internal/config"
 	"github.com/dennis/vaultapp/internal/database"
 	"github.com/dennis/vaultapp/internal/scanner"
@@ -55,6 +56,14 @@ type ScanResult struct {
 type ConnectedVolumes struct {
 	Enabled bool             `json:"enabled"`
 	Volumes []storage.Volume `json:"volumes"`
+}
+
+type BackupResult struct {
+	Cancelled bool   `json:"cancelled"`
+	Path      string `json:"path"`
+	Files     int    `json:"files"`
+	Bytes     int64  `json:"bytes"`
+	Message   string `json:"message"`
 }
 
 type DuplicateResult struct {
@@ -105,7 +114,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.25.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.26.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -278,6 +287,71 @@ func (a *App) SaveSettings(settings appconfig.Settings) error {
 	a.settings = settings
 	a.settingsMu.Unlock()
 	return nil
+}
+
+func (a *App) CreateBackup() (BackupResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return BackupResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	settings := a.currentSettings()
+	if !settings.BackupEnabled {
+		return BackupResult{}, fmt.Errorf("Datensicherungen sind in den Einstellungen deaktiviert")
+	}
+	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+		Title:           "VaultApp-Datensicherung speichern",
+		DefaultFilename: fmt.Sprintf("VaultApp-Backup-%s.zip", time.Now().Format("2006-01-02_15-04")),
+		Filters:         []wailsruntime.FileFilter{{DisplayName: "ZIP-Archiv", Pattern: "*.zip"}},
+	})
+	if err != nil {
+		return BackupResult{}, err
+	}
+	if destination == "" {
+		return BackupResult{Cancelled: true, Message: "Datensicherung abgebrochen"}, nil
+	}
+	if !strings.EqualFold(filepath.Ext(destination), ".zip") {
+		destination += ".zip"
+	}
+
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
+	snapshot, err := os.CreateTemp("", "vaultapp-catalog-*.db")
+	if err != nil {
+		return BackupResult{}, err
+	}
+	snapshotPath := snapshot.Name()
+	_ = snapshot.Close()
+	_ = os.Remove(snapshotPath)
+	defer os.Remove(snapshotPath)
+	if err := a.catalog.BackupTo(snapshotPath); err != nil {
+		return BackupResult{}, err
+	}
+	sources := []backup.Source{
+		{Path: snapshotPath, Name: "VaultApp-Backup/data/vault.db"},
+		{Path: a.configPath, Name: "VaultApp-Backup/data/config.json"},
+	}
+	if settings.BackupIncludeThumbnails {
+		thumbnailRoot, pathErr := vault.AssetPath(a.root, "thumbnails")
+		if pathErr != nil {
+			return BackupResult{}, pathErr
+		}
+		thumbnails, collectErr := backup.DirectorySources(thumbnailRoot, "VaultApp-Backup/assets/thumbnails")
+		if collectErr != nil {
+			return BackupResult{}, fmt.Errorf("Vorschaubilder sammeln: %w", collectErr)
+		}
+		sources = append(sources, thumbnails...)
+	}
+	limits := backup.Limits{}
+	if !settings.BackupFileUnlimited {
+		limits.PerFileBytes = int64(settings.BackupFileMB) << 20
+	}
+	if !settings.BackupUnlimited {
+		limits.TotalBytes = int64(settings.BackupMaxMB) << 20
+	}
+	result, err := backup.Create(destination, sources, limits)
+	if err != nil {
+		return BackupResult{}, err
+	}
+	return BackupResult{Path: destination, Files: result.Files, Bytes: result.Bytes, Message: "Datensicherung erfolgreich erstellt"}, nil
 }
 
 func (a *App) currentSettings() appconfig.Settings {

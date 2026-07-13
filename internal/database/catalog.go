@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -190,6 +191,17 @@ func Open(path string) (*Catalog, error) {
 	return catalog, nil
 }
 func (c *Catalog) Close() error { _ = c.readDB.Close(); return c.db.Close() }
+
+// BackupTo creates a transactionally consistent standalone SQLite copy.
+func (c *Catalog) BackupTo(destination string) error {
+	if err := os.Remove(destination); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if _, err := c.db.Exec("VACUUM INTO ?", destination); err != nil {
+		return fmt.Errorf("Datenbank-Sicherung: %w", err)
+	}
+	return nil
+}
 func (c *Catalog) Stats() (files, drives int64, err error) {
 	if err = c.db.QueryRow("SELECT COUNT(*) FROM files").Scan(&files); err != nil {
 		return

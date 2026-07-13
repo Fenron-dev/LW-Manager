@@ -12,7 +12,7 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !settings.VolumeDetectionEnabled || !settings.ArchiveEnabled || settings.MaxSnapshots != 10 {
+	if !settings.VolumeDetectionEnabled || !settings.BackupEnabled || settings.BackupFileMB != 1024 || settings.BackupMaxMB != 2048 || !settings.ArchiveEnabled || settings.MaxSnapshots != 10 {
 		t.Fatalf("unexpected defaults: %+v", settings)
 	}
 	if !settings.ImageAnalysisEnabled || !settings.ImageJPEGEnabled || !settings.ImagePNGEnabled || !settings.ImageGIFEnabled || !settings.ImageHEICEnabled || settings.ImageHeaderMB != 4 {

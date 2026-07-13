@@ -94,6 +94,12 @@ async function showSettings() {
   try {
     const settings = await window.go.main.App.GetSettings();
     $('#setting-volume-detection').checked = settings.volumeDetectionEnabled;
+    $('#setting-backup-enabled').checked = settings.backupEnabled;
+    $('#setting-backup-thumbnails').checked = settings.backupIncludeThumbnails;
+    $('#setting-backup-file-limit').value = settings.backupFileMB;
+    $('#setting-backup-file-unlimited').checked = settings.backupFileUnlimited;
+    $('#setting-backup-limit').value = settings.backupMaxMB;
+    $('#setting-backup-unlimited').checked = settings.backupUnlimited;
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
     $('#setting-image-analysis-enabled').checked = settings.imageAnalysisEnabled;
@@ -133,10 +139,17 @@ async function showSettings() {
 async function saveSettings() {
   const button = $('#save-settings-button');
   button.disabled = true;
+  let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 6,
+      version: 7,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
+      backupEnabled: $('#setting-backup-enabled').checked,
+      backupIncludeThumbnails: $('#setting-backup-thumbnails').checked,
+      backupFileMB: Number($('#setting-backup-file-limit').value),
+      backupFileUnlimited: $('#setting-backup-file-unlimited').checked,
+      backupMaxMB: Number($('#setting-backup-limit').value),
+      backupUnlimited: $('#setting-backup-unlimited').checked,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked,
@@ -171,11 +184,42 @@ async function saveSettings() {
       videoPreviewMB: Number($('#setting-video-limit').value)
     });
     $('#settings-status').textContent = 'Einstellungen gespeichert ✓';
+    saved = true;
   } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
   finally { button.disabled = false; }
+  return saved;
+}
+
+async function createBackup() {
+  const button = $('#create-backup-button');
+  button.disabled = true;
+  if (!await saveSettings()) {
+    syncSettingsControls();
+    return;
+  }
+  $('#settings-status').textContent = 'Backup wird vorbereitet …';
+  try {
+    const result = await window.go.main.App.CreateBackup();
+    if (result.cancelled) {
+      $('#settings-status').textContent = 'Backup abgebrochen.';
+    } else {
+      $('#settings-status').textContent = `${result.message}: ${formatBytes(result.bytes)} · ${result.files.toLocaleString('de-DE')} Dateien`;
+    }
+  } catch (error) {
+    $('#settings-status').textContent = `Backup fehlgeschlagen: ${error}`;
+  } finally {
+    syncSettingsControls();
+  }
 }
 
 function syncSettingsControls() {
+  const backupEnabled = $('#setting-backup-enabled').checked;
+  $('#setting-backup-thumbnails').disabled = !backupEnabled;
+  $('#setting-backup-file-unlimited').disabled = !backupEnabled;
+  $('#setting-backup-file-limit').disabled = !backupEnabled || $('#setting-backup-file-unlimited').checked;
+  $('#setting-backup-unlimited').disabled = !backupEnabled;
+  $('#setting-backup-limit').disabled = !backupEnabled || $('#setting-backup-unlimited').checked;
+  $('#create-backup-button').disabled = !backupEnabled;
   const analysisEnabled = $('#setting-image-analysis-enabled').checked;
   ['#setting-image-jpeg', '#setting-image-png', '#setting-image-gif', '#setting-image-heic', '#setting-image-header-unlimited', '#setting-image-scan-unlimited'].forEach((selector) => { $(selector).disabled = !analysisEnabled; });
   $('#setting-image-header-limit').disabled = !analysisEnabled || $('#setting-image-header-unlimited').checked;
@@ -898,7 +942,8 @@ $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
-['#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+$('#create-backup-button').addEventListener('click', createBackup);
+['#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#drive-scan-button').addEventListener('click', startScan);
