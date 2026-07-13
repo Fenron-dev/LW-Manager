@@ -3,10 +3,12 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -30,7 +32,9 @@ func Identify(path string) (Identity, error) {
 	rootPath := windows.UTF16ToString(root)
 	if len(rootPath) >= 2 && rootPath[1] == ':' {
 		script := fmt.Sprintf("Get-Partition -DriveLetter '%s' | Get-Disk | Select-Object SerialNumber,FriendlyName,Manufacturer,BusType | ConvertTo-Json -Compress", strings.ToUpper(rootPath[:1]))
-		if data, commandErr := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output(); commandErr == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if data, commandErr := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output(); commandErr == nil {
 			var hardware struct {
 				SerialNumber string
 				FriendlyName string

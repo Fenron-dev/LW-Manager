@@ -4,14 +4,18 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 func Identify(path string) (Identity, error) {
-	data, err := exec.Command("/usr/sbin/diskutil", "info", "-plist", path).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	data, err := exec.CommandContext(ctx, "/usr/sbin/diskutil", "info", "-plist", path).Output()
 	if err != nil {
 		return Identity{}, err
 	}
@@ -67,7 +71,9 @@ func Identify(path string) (Identity, error) {
 }
 
 func (identity *Identity) enrichDarwinHardware(device string) {
-	data, err := exec.Command("/usr/sbin/system_profiler", "SPUSBDataType", "-json", "-detailLevel", "mini").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	data, err := exec.CommandContext(ctx, "/usr/sbin/system_profiler", "SPUSBDataType", "-json", "-detailLevel", "mini").Output()
 	if err != nil {
 		return
 	}

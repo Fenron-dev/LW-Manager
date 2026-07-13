@@ -3,13 +3,17 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 func Identify(path string) (Identity, error) {
-	data, err := exec.Command("findmnt", "-J", "-o", "UUID,FSTYPE,SOURCE,TARGET", "--target", path).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	data, err := exec.CommandContext(ctx, "findmnt", "-J", "-o", "UUID,FSTYPE,SOURCE,TARGET", "--target", path).Output()
 	if err != nil {
 		return Identity{}, err
 	}
@@ -29,7 +33,7 @@ func Identify(path string) (Identity, error) {
 	}
 	item := result.Filesystems[0]
 	identity := Identity{UUID: item.UUID, FSType: item.FSType, Model: item.Source}
-	blockData, blockErr := exec.Command("lsblk", "-J", "-o", "MODEL,SERIAL,VENDOR,TRAN", item.Source).Output()
+	blockData, blockErr := exec.CommandContext(ctx, "lsblk", "-J", "-o", "MODEL,SERIAL,VENDOR,TRAN", item.Source).Output()
 	if blockErr == nil {
 		var blocks struct {
 			Devices []struct {

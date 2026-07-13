@@ -23,7 +23,8 @@ import (
 
 type App struct {
 	ctx        context.Context
-	mu         sync.Mutex
+	scanMu     sync.Mutex
+	settingsMu sync.RWMutex
 	root       string
 	configPath string
 	settings   appconfig.Settings
@@ -98,7 +99,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.18.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.18.1-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -218,16 +219,12 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	a.mu.Lock()
-	settings := a.settings
-	a.mu.Unlock()
+	settings := a.currentSettings()
 	return thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size), settings.ImagePreviewMB, settings.PDFPreviewMB, settings.VideoPreviewMB)
 }
 
 func (a *App) GetSettings() appconfig.Settings {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.settings
+	return a.currentSettings()
 }
 
 func (a *App) SaveSettings(settings appconfig.Settings) error {
@@ -237,10 +234,16 @@ func (a *App) SaveSettings(settings appconfig.Settings) error {
 	if err := appconfig.Save(a.configPath, settings); err != nil {
 		return err
 	}
-	a.mu.Lock()
+	a.settingsMu.Lock()
 	a.settings = settings
-	a.mu.Unlock()
+	a.settingsMu.Unlock()
 	return nil
+}
+
+func (a *App) currentSettings() appconfig.Settings {
+	a.settingsMu.RLock()
+	defer a.settingsMu.RUnlock()
+	return a.settings
 }
 
 func (a *App) GetDriveSnapshots(driveID int64) ([]database.Snapshot, error) {
@@ -295,8 +298,8 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 		return ScanResult{Cancelled: true, Message: "Scan abgebrochen"}, nil
 	}
 
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": 0, "path": selected})
 	report, err := scanner.Scan(a.ctx, selected, a.root, func(count int, path string) {
 		if count == 1 || count%250 == 0 {
@@ -307,9 +310,7 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 		return ScanResult{}, err
 	}
 	totalSize, usedSize, _ := storage.Usage(selected)
-	a.mu.Lock()
-	settings := a.settings
-	a.mu.Unlock()
+	settings := a.currentSettings()
 	identity, _ := storage.Identify(selected)
 	label := filepath.Base(filepath.Clean(selected))
 	if identity.Label != "" {
