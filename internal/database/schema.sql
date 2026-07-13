@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS files (
     content_hash TEXT,
     thumbnail TEXT,
     metadata TEXT,
+    text_content TEXT,
     created_at TEXT,
     modified_at TEXT,
     scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

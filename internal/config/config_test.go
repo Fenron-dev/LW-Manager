@@ -21,6 +21,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if settings.EXIFEnabled || settings.EXIFFileMB != 8 || !settings.EXIFTotalUnlimited {
 		t.Fatalf("unexpected EXIF defaults: %+v", settings)
 	}
+	if settings.TextIndexEnabled || !settings.TextDocumentsEnabled || !settings.TextDataEnabled || !settings.TextSourceEnabled || settings.TextFileMB != 2 || settings.TextTotalMB != 500 {
+		t.Fatalf("unexpected text index defaults: %+v", settings)
+	}
 	settings.MaxSnapshots = 3
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)

@@ -24,6 +24,14 @@ type Settings struct {
 	EXIFFileUnlimited        bool `json:"exifFileUnlimited"`
 	EXIFTotalMB              int  `json:"exifTotalMB"`
 	EXIFTotalUnlimited       bool `json:"exifTotalUnlimited"`
+	TextIndexEnabled         bool `json:"textIndexEnabled"`
+	TextDocumentsEnabled     bool `json:"textDocumentsEnabled"`
+	TextDataEnabled          bool `json:"textDataEnabled"`
+	TextSourceEnabled        bool `json:"textSourceEnabled"`
+	TextFileMB               int  `json:"textFileMB"`
+	TextFileUnlimited        bool `json:"textFileUnlimited"`
+	TextTotalMB              int  `json:"textTotalMB"`
+	TextTotalUnlimited       bool `json:"textTotalUnlimited"`
 	ImagePreviewEnabled      bool `json:"imagePreviewEnabled"`
 	ImagePreviewMB           int  `json:"imagePreviewMB"`
 	ImagePreviewUnlimited    bool `json:"imagePreviewUnlimited"`
@@ -35,10 +43,11 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 3, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 4, ArchiveEnabled: true, MaxSnapshots: 10,
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
 		EXIFFileMB: 8, EXIFTotalMB: 256, EXIFTotalUnlimited: true,
+		TextDocumentsEnabled: true, TextDataEnabled: true, TextSourceEnabled: true, TextFileMB: 2, TextTotalMB: 500,
 		ImagePreviewEnabled: true, ImagePreviewMB: 100, ThumbnailCacheMB: 500, ThumbnailCacheUnlimited: true,
 		PDFPreviewMB: 40, VideoPreviewMB: 50,
 	}
@@ -66,7 +75,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 3
+	settings.Version = 4
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -103,6 +112,12 @@ func (settings Settings) Validate() error {
 	}
 	if settings.EXIFTotalMB < 1 || settings.EXIFTotalMB > 1_000_000 {
 		return fmt.Errorf("EXIF-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.TextFileMB < 1 || settings.TextFileMB > 1024 {
+		return fmt.Errorf("Textindex-Dateilimit muss zwischen 1 und 1024 MB liegen")
+	}
+	if settings.TextTotalMB < 1 || settings.TextTotalMB > 1_000_000 {
+		return fmt.Errorf("Textindex-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.ThumbnailCacheMB < 1 || settings.ThumbnailCacheMB > 1_000_000 {
 		return fmt.Errorf("Vorschau-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")

@@ -99,7 +99,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.22.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.23.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -114,7 +114,7 @@ func (a *App) GetAppInfo() AppInfo {
 	return info
 }
 
-func (a *App) SearchFiles(query, extension string, driveID int64, page int) (LibraryResult, error) {
+func (a *App) SearchFiles(query, extension string, driveID int64, includeContent bool, page int) (LibraryResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return LibraryResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
@@ -122,7 +122,7 @@ func (a *App) SearchFiles(query, extension string, driveID int64, page int) (Lib
 		page = 1
 	}
 	const pageSize = 50
-	result, err := a.catalog.Search(query, extension, driveID, pageSize, (page-1)*pageSize)
+	result, err := a.catalog.Search(query, extension, driveID, includeContent, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return LibraryResult{}, err
 	}
@@ -329,6 +329,10 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 	}, scanner.EXIFAnalysisOptions{
 		Enabled: settings.EXIFEnabled, PerFileBytes: int64(settings.EXIFFileMB) << 20, TotalBytes: int64(settings.EXIFTotalMB) << 20,
 		PerFileUnlimited: settings.EXIFFileUnlimited, TotalUnlimited: settings.EXIFTotalUnlimited,
+	}, scanner.TextIndexOptions{
+		Enabled: settings.TextIndexEnabled, Documents: settings.TextDocumentsEnabled, Data: settings.TextDataEnabled, SourceCode: settings.TextSourceEnabled,
+		PerFileBytes: int64(settings.TextFileMB) << 20, TotalBytes: int64(settings.TextTotalMB) << 20,
+		PerFileUnlimited: settings.TextFileUnlimited, TotalUnlimited: settings.TextTotalUnlimited,
 	}, func(count int, path string) {
 		if count == 1 || count%250 == 0 {
 			wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": count, "path": path})

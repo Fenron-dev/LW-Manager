@@ -108,6 +108,14 @@ async function showSettings() {
     $('#setting-exif-file-unlimited').checked = settings.exifFileUnlimited;
     $('#setting-exif-total-limit').value = settings.exifTotalMB;
     $('#setting-exif-total-unlimited').checked = settings.exifTotalUnlimited;
+    $('#setting-text-enabled').checked = settings.textIndexEnabled;
+    $('#setting-text-documents').checked = settings.textDocumentsEnabled;
+    $('#setting-text-data').checked = settings.textDataEnabled;
+    $('#setting-text-source').checked = settings.textSourceEnabled;
+    $('#setting-text-file-limit').value = settings.textFileMB;
+    $('#setting-text-file-unlimited').checked = settings.textFileUnlimited;
+    $('#setting-text-total-limit').value = settings.textTotalMB;
+    $('#setting-text-total-unlimited').checked = settings.textTotalUnlimited;
     $('#setting-image-preview-enabled').checked = settings.imagePreviewEnabled;
     $('#setting-image-limit').value = settings.imagePreviewMB;
     $('#setting-image-preview-unlimited').checked = settings.imagePreviewUnlimited;
@@ -124,7 +132,7 @@ async function saveSettings() {
   button.disabled = true;
   try {
     await window.go.main.App.SaveSettings({
-      version: 3,
+      version: 4,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked,
@@ -140,6 +148,14 @@ async function saveSettings() {
       exifFileUnlimited: $('#setting-exif-file-unlimited').checked,
       exifTotalMB: Number($('#setting-exif-total-limit').value),
       exifTotalUnlimited: $('#setting-exif-total-unlimited').checked,
+      textIndexEnabled: $('#setting-text-enabled').checked,
+      textDocumentsEnabled: $('#setting-text-documents').checked,
+      textDataEnabled: $('#setting-text-data').checked,
+      textSourceEnabled: $('#setting-text-source').checked,
+      textFileMB: Number($('#setting-text-file-limit').value),
+      textFileUnlimited: $('#setting-text-file-unlimited').checked,
+      textTotalMB: Number($('#setting-text-total-limit').value),
+      textTotalUnlimited: $('#setting-text-total-unlimited').checked,
       imagePreviewEnabled: $('#setting-image-preview-enabled').checked,
       imagePreviewMB: Number($('#setting-image-limit').value),
       imagePreviewUnlimited: $('#setting-image-preview-unlimited').checked,
@@ -162,6 +178,10 @@ function syncSettingsControls() {
   ['#setting-exif-file-unlimited', '#setting-exif-total-unlimited'].forEach((selector) => { $(selector).disabled = !exifEnabled; });
   $('#setting-exif-file-limit').disabled = !exifEnabled || $('#setting-exif-file-unlimited').checked;
   $('#setting-exif-total-limit').disabled = !exifEnabled || $('#setting-exif-total-unlimited').checked;
+  const textEnabled = $('#setting-text-enabled').checked;
+  ['#setting-text-documents', '#setting-text-data', '#setting-text-source', '#setting-text-file-unlimited', '#setting-text-total-unlimited'].forEach((selector) => { $(selector).disabled = !textEnabled; });
+  $('#setting-text-file-limit').disabled = !textEnabled || $('#setting-text-file-unlimited').checked;
+  $('#setting-text-total-limit').disabled = !textEnabled || $('#setting-text-total-unlimited').checked;
   const previewEnabled = $('#setting-image-preview-enabled').checked;
   ['#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => { $(selector).disabled = !previewEnabled; });
   $('#setting-image-limit').disabled = !previewEnabled || $('#setting-image-preview-unlimited').checked;
@@ -221,10 +241,16 @@ function renderFiles(files) {
     const row = document.createElement('div');
     row.className = 'file-row';
     row.classList.add('file-clickable');
-    const name = document.createElement('span');
+    const name = document.createElement('div');
     name.className = 'file-name';
     name.textContent = file.filename;
     name.title = file.filename;
+    if (file.matchSnippet) {
+      const snippet = document.createElement('small');
+      snippet.className = 'content-match-snippet';
+      snippet.textContent = file.matchSnippet.replace(/\s+/g, ' ').trim();
+      name.append(snippet);
+    }
     const drive = document.createElement('span');
     drive.className = 'file-drive';
     drive.textContent = file.drive;
@@ -252,7 +278,7 @@ async function loadLibrary(page = 1) {
   libraryPage = Math.max(1, page);
   $('#result-count').textContent = 'Suche läuft …';
   try {
-    const result = await window.go.main.App.SearchFiles($('#search-input').value, $('#extension-filter').value, Number($('#drive-filter').value), libraryPage);
+    const result = await window.go.main.App.SearchFiles($('#search-input').value, $('#extension-filter').value, Number($('#drive-filter').value), $('#content-search').checked, libraryPage);
     libraryTotal = result.total;
     libraryPageSize = result.pageSize;
     renderFiles(result.files);
@@ -798,7 +824,7 @@ $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
-['#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+['#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#drive-scan-button').addEventListener('click', startScan);
@@ -806,6 +832,7 @@ $('#search-button').addEventListener('click', () => loadLibrary(1));
 $('#search-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadLibrary(1); });
 $('#extension-filter').addEventListener('change', () => loadLibrary(1));
 $('#drive-filter').addEventListener('change', () => loadLibrary(1));
+$('#content-search').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
 $('#duplicate-button').addEventListener('click', findDuplicates);
