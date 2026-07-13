@@ -2,8 +2,14 @@ package scanner
 
 import (
 	"context"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
 	"io/fs"
 	"mime"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,6 +18,7 @@ import (
 type File struct {
 	Path, Filename, Extension, MIMEType string
 	Size                                int64
+	Width, Height                       int
 	CreatedAt, Modified                 time.Time
 }
 
@@ -63,7 +70,8 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, progress func(in
 		if separator := strings.IndexByte(mediaType, ';'); separator >= 0 {
 			mediaType = mediaType[:separator]
 		}
-		report.Files = append(report.Files, File{Path: filepath.ToSlash(relative), Filename: entry.Name(), Extension: strings.TrimPrefix(extension, "."), Size: info.Size(), MIMEType: mediaType, Modified: info.ModTime()})
+		width, height := imageDimensions(path, extension)
+		report.Files = append(report.Files, File{Path: filepath.ToSlash(relative), Filename: entry.Name(), Extension: strings.TrimPrefix(extension, "."), Size: info.Size(), MIMEType: mediaType, Width: width, Height: height, Modified: info.ModTime()})
 		report.Bytes += info.Size()
 		if progress != nil {
 			progress(len(report.Files), relative)
@@ -71,6 +79,24 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, progress func(in
 		return nil
 	})
 	return report, err
+}
+
+func imageDimensions(path, extension string) (int, int) {
+	switch extension {
+	case ".jpg", ".jpeg", ".png", ".gif":
+	default:
+		return 0, 0
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, 0
+	}
+	defer file.Close()
+	config, _, err := image.DecodeConfig(io.LimitReader(file, 4<<20))
+	if err != nil || config.Width <= 0 || config.Height <= 0 {
+		return 0, 0
+	}
+	return config.Width, config.Height
 }
 
 func sameOrChild(path, parent string) bool {

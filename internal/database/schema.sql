@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS files (
     filename TEXT NOT NULL,
     extension TEXT,
     size INTEGER NOT NULL DEFAULT 0,
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
     mime_type TEXT,
     content_hash TEXT,
     thumbnail TEXT,

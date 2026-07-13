@@ -580,7 +580,8 @@ function openFileDialog(file) {
   $('#file-dialog-title').textContent = file.filename;
   $('#detail-drive').textContent = file.drive;
   $('#detail-path').textContent = file.path;
-  $('#detail-type').textContent = file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt');
+  const dimensions = file.width && file.height ? ` · ${file.width.toLocaleString('de-DE')} × ${file.height.toLocaleString('de-DE')} px` : '';
+  $('#detail-type').textContent = `${file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt')}${dimensions}`;
   $('#detail-size').textContent = formatBytes(file.size);
   $('#detail-modified').textContent = formatDate(file.modified);
   const previewWrap = $('#preview-wrap');
