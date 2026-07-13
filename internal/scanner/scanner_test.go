@@ -2,10 +2,12 @@ package scanner
 
 import (
 	"context"
+	"encoding/binary"
 	"image"
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,7 +26,7 @@ func TestScanCollectsMetadataAndSkipsVault(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vault, "vault.db"), []byte("ignore"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	report, err := Scan(context.Background(), root, vault, ImageAnalysisOptions{Enabled: true, JPEG: true, PNG: true, GIF: true, PerFileBytes: 4 << 20, TotalUnlimited: true}, nil)
+	report, err := Scan(context.Background(), root, vault, ImageAnalysisOptions{Enabled: true, JPEG: true, PNG: true, GIF: true, PerFileBytes: 4 << 20, TotalUnlimited: true}, EXIFAnalysisOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +35,33 @@ func TestScanCollectsMetadataAndSkipsVault(t *testing.T) {
 	}
 	if report.Files[0].Path != "photos/IMAGE.JPG" || report.Files[0].Extension != "jpg" {
 		t.Fatalf("unexpected file: %#v", report.Files[0])
+	}
+}
+
+func TestScanCollectsOptionalEXIFMetadata(t *testing.T) {
+	root := t.TempDir()
+	tiff := make([]byte, 48)
+	copy(tiff[:2], "II")
+	binary.LittleEndian.PutUint16(tiff[2:4], 42)
+	binary.LittleEndian.PutUint32(tiff[4:8], 8)
+	binary.LittleEndian.PutUint16(tiff[8:10], 1)
+	binary.LittleEndian.PutUint16(tiff[10:12], 0x010f)
+	binary.LittleEndian.PutUint16(tiff[12:14], 2)
+	binary.LittleEndian.PutUint32(tiff[14:18], 6)
+	binary.LittleEndian.PutUint32(tiff[18:22], 30)
+	copy(tiff[30:], "Canon\x00")
+	segment := append([]byte("Exif\x00\x00"), tiff...)
+	jpeg := []byte{0xff, 0xd8, 0xff, 0xe1, byte((len(segment) + 2) >> 8), byte(len(segment) + 2)}
+	jpeg = append(jpeg, segment...)
+	if err := os.WriteFile(filepath.Join(root, "photo.jpg"), jpeg, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, EXIFAnalysisOptions{Enabled: true, PerFileBytes: 1 << 20, TotalUnlimited: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Files) != 1 || !strings.Contains(report.Files[0].Metadata, `"manufacturer":"Canon"`) {
+		t.Fatalf("EXIF metadata missing: %#v", report.Files)
 	}
 }
 
@@ -48,7 +77,7 @@ func TestScanCollectsImageDimensions(t *testing.T) {
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{Enabled: true, PNG: true, PerFileBytes: 4 << 20, TotalUnlimited: true}, nil)
+	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{Enabled: true, PNG: true, PerFileBytes: 4 << 20, TotalUnlimited: true}, EXIFAnalysisOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +98,7 @@ func TestScanCanDisableImageDimensions(t *testing.T) {
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, nil)
+	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, EXIFAnalysisOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

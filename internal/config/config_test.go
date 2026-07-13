@@ -18,6 +18,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.ImageAnalysisEnabled || !settings.ImageJPEGEnabled || !settings.ImagePNGEnabled || !settings.ImageGIFEnabled || settings.ImageHeaderMB != 4 {
 		t.Fatalf("unexpected image analysis defaults: %+v", settings)
 	}
+	if settings.EXIFEnabled || settings.EXIFFileMB != 8 || !settings.EXIFTotalUnlimited {
+		t.Fatalf("unexpected EXIF defaults: %+v", settings)
+	}
 	settings.MaxSnapshots = 3
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)

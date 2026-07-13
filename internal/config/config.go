@@ -19,6 +19,11 @@ type Settings struct {
 	ImageHeaderUnlimited     bool `json:"imageHeaderUnlimited"`
 	ImageScanBudgetMB        int  `json:"imageScanBudgetMB"`
 	ImageScanBudgetUnlimited bool `json:"imageScanBudgetUnlimited"`
+	EXIFEnabled              bool `json:"exifEnabled"`
+	EXIFFileMB               int  `json:"exifFileMB"`
+	EXIFFileUnlimited        bool `json:"exifFileUnlimited"`
+	EXIFTotalMB              int  `json:"exifTotalMB"`
+	EXIFTotalUnlimited       bool `json:"exifTotalUnlimited"`
 	ImagePreviewEnabled      bool `json:"imagePreviewEnabled"`
 	ImagePreviewMB           int  `json:"imagePreviewMB"`
 	ImagePreviewUnlimited    bool `json:"imagePreviewUnlimited"`
@@ -30,9 +35,10 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 2, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 3, ArchiveEnabled: true, MaxSnapshots: 10,
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
+		EXIFFileMB: 8, EXIFTotalMB: 256, EXIFTotalUnlimited: true,
 		ImagePreviewEnabled: true, ImagePreviewMB: 100, ThumbnailCacheMB: 500, ThumbnailCacheUnlimited: true,
 		PDFPreviewMB: 40, VideoPreviewMB: 50,
 	}
@@ -60,7 +66,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 2
+	settings.Version = 3
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -91,6 +97,12 @@ func (settings Settings) Validate() error {
 	}
 	if settings.ImageScanBudgetMB < 1 || settings.ImageScanBudgetMB > 1_000_000 {
 		return fmt.Errorf("Analyse-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.EXIFFileMB < 1 || settings.EXIFFileMB > 1024 {
+		return fmt.Errorf("EXIF-Dateilimit muss zwischen 1 und 1024 MB liegen")
+	}
+	if settings.EXIFTotalMB < 1 || settings.EXIFTotalMB > 1_000_000 {
+		return fmt.Errorf("EXIF-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.ThumbnailCacheMB < 1 || settings.ThumbnailCacheMB > 1_000_000 {
 		return fmt.Errorf("Vorschau-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")

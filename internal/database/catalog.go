@@ -65,6 +65,7 @@ type FileResult struct {
 	Size      int64  `json:"size"`
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
+	Metadata  string `json:"metadata"`
 	Modified  string `json:"modified"`
 }
 
@@ -211,7 +212,7 @@ func (c *Catalog) Search(query, extension string, driveID int64, limit, offset i
 	if err := c.db.QueryRow("SELECT COUNT(*) FROM files f WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := c.db.Query(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.modified_at,'')
+	rows, err := c.db.Query(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.modified_at,'')
 		FROM files f JOIN drives d ON d.id=f.drive_id WHERE `+where+` ORDER BY f.filename COLLATE NOCASE,f.path LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
 		return result, err
@@ -220,7 +221,7 @@ func (c *Catalog) Search(query, extension string, driveID int64, limit, offset i
 	result.Files = make([]FileResult, 0, limit)
 	for rows.Next() {
 		var file FileResult
-		if err := rows.Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Modified); err != nil {
+		if err := rows.Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified); err != nil {
 			return result, err
 		}
 		result.Files = append(result.Files, file)
@@ -432,6 +433,14 @@ func (c *Catalog) SourceFile(id int64) (SourceFile, error) {
 		return SourceFile{}, fmt.Errorf("Dateipfad verlässt den Datenträger")
 	}
 	return source, nil
+}
+
+func (c *Catalog) FileDetails(id int64) (FileResult, error) {
+	var file FileResult
+	err := c.readDB.QueryRow(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.modified_at,'')
+		FROM files f JOIN drives d ON d.id=f.drive_id WHERE f.id=?`, id).
+		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified)
+	return file, err
 }
 
 func (c *Catalog) Snapshots(driveID int64) ([]Snapshot, error) {
@@ -737,7 +746,7 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 	if _, err = tx.Exec("DELETE FROM files WHERE drive_id=?", driveID); err != nil {
 		return err
 	}
-	statement, err := tx.Prepare(`INSERT INTO files(drive_id,path,filename,extension,size,width,height,mime_type,created_at,modified_at) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+	statement, err := tx.Prepare(`INSERT INTO files(drive_id,path,filename,extension,size,width,height,mime_type,metadata,created_at,modified_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
@@ -747,7 +756,7 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 		if !file.CreatedAt.IsZero() {
 			created = file.CreatedAt.UTC().Format(time.RFC3339Nano)
 		}
-		if _, err = statement.Exec(driveID, file.Path, file.Filename, file.Extension, file.Size, file.Width, file.Height, file.MIMEType, created, file.Modified.UTC().Format(time.RFC3339Nano)); err != nil {
+		if _, err = statement.Exec(driveID, file.Path, file.Filename, file.Extension, file.Size, file.Width, file.Height, file.MIMEType, file.Metadata, created, file.Modified.UTC().Format(time.RFC3339Nano)); err != nil {
 			return err
 		}
 	}

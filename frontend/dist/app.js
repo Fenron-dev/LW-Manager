@@ -103,6 +103,11 @@ async function showSettings() {
     $('#setting-image-header-unlimited').checked = settings.imageHeaderUnlimited;
     $('#setting-image-scan-limit').value = settings.imageScanBudgetMB;
     $('#setting-image-scan-unlimited').checked = settings.imageScanBudgetUnlimited;
+    $('#setting-exif-enabled').checked = settings.exifEnabled;
+    $('#setting-exif-file-limit').value = settings.exifFileMB;
+    $('#setting-exif-file-unlimited').checked = settings.exifFileUnlimited;
+    $('#setting-exif-total-limit').value = settings.exifTotalMB;
+    $('#setting-exif-total-unlimited').checked = settings.exifTotalUnlimited;
     $('#setting-image-preview-enabled').checked = settings.imagePreviewEnabled;
     $('#setting-image-limit').value = settings.imagePreviewMB;
     $('#setting-image-preview-unlimited').checked = settings.imagePreviewUnlimited;
@@ -119,7 +124,7 @@ async function saveSettings() {
   button.disabled = true;
   try {
     await window.go.main.App.SaveSettings({
-      version: 2,
+      version: 3,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked,
@@ -130,6 +135,11 @@ async function saveSettings() {
       imageHeaderUnlimited: $('#setting-image-header-unlimited').checked,
       imageScanBudgetMB: Number($('#setting-image-scan-limit').value),
       imageScanBudgetUnlimited: $('#setting-image-scan-unlimited').checked,
+      exifEnabled: $('#setting-exif-enabled').checked,
+      exifFileMB: Number($('#setting-exif-file-limit').value),
+      exifFileUnlimited: $('#setting-exif-file-unlimited').checked,
+      exifTotalMB: Number($('#setting-exif-total-limit').value),
+      exifTotalUnlimited: $('#setting-exif-total-unlimited').checked,
       imagePreviewEnabled: $('#setting-image-preview-enabled').checked,
       imagePreviewMB: Number($('#setting-image-limit').value),
       imagePreviewUnlimited: $('#setting-image-preview-unlimited').checked,
@@ -148,6 +158,10 @@ function syncSettingsControls() {
   ['#setting-image-jpeg', '#setting-image-png', '#setting-image-gif', '#setting-image-header-unlimited', '#setting-image-scan-unlimited'].forEach((selector) => { $(selector).disabled = !analysisEnabled; });
   $('#setting-image-header-limit').disabled = !analysisEnabled || $('#setting-image-header-unlimited').checked;
   $('#setting-image-scan-limit').disabled = !analysisEnabled || $('#setting-image-scan-unlimited').checked;
+  const exifEnabled = $('#setting-exif-enabled').checked;
+  ['#setting-exif-file-unlimited', '#setting-exif-total-unlimited'].forEach((selector) => { $(selector).disabled = !exifEnabled; });
+  $('#setting-exif-file-limit').disabled = !exifEnabled || $('#setting-exif-file-unlimited').checked;
+  $('#setting-exif-total-limit').disabled = !exifEnabled || $('#setting-exif-total-unlimited').checked;
   const previewEnabled = $('#setting-image-preview-enabled').checked;
   ['#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => { $(selector).disabled = !previewEnabled; });
   $('#setting-image-limit').disabled = !previewEnabled || $('#setting-image-preview-unlimited').checked;
@@ -601,7 +615,10 @@ async function addStorageLocation() {
   } catch (error) { $('#drive-save-status').textContent = `Fehler: ${error}`; }
 }
 
-function openFileDialog(file) {
+async function openFileDialog(file) {
+  if (file.id && file.metadata === undefined) {
+    try { file = await window.go.main.App.GetFileDetails(file.id); } catch (_) { /* Basisdaten weiter anzeigen. */ }
+  }
   $('#file-dialog-title').textContent = file.filename;
   $('#detail-drive').textContent = file.drive;
   $('#detail-path').textContent = file.path;
@@ -609,6 +626,15 @@ function openFileDialog(file) {
   $('#detail-type').textContent = `${file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt')}${dimensions}`;
   $('#detail-size').textContent = formatBytes(file.size);
   $('#detail-modified').textContent = formatDate(file.modified);
+  let metadata = {};
+  try { metadata = file.metadata ? JSON.parse(file.metadata) : {}; } catch (_) { metadata = {}; }
+  const orientationNames = {1: 'Normal', 2: 'Horizontal gespiegelt', 3: '180°', 4: 'Vertikal gespiegelt', 5: '90° gespiegelt', 6: '90° im Uhrzeigersinn', 7: '270° gespiegelt', 8: '270° im Uhrzeigersinn'};
+  const captured = metadata.capturedAt ? metadata.capturedAt.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$3.$2.$1') : '';
+  $('#detail-captured').textContent = captured;
+  $('#detail-camera').textContent = [metadata.manufacturer, metadata.camera].filter(Boolean).join(' ');
+  $('#detail-lens').textContent = metadata.lens || '';
+  $('#detail-orientation').textContent = orientationNames[metadata.orientation] || '';
+  document.querySelectorAll('.exif-detail').forEach((row) => row.classList.toggle('hidden', !row.querySelector('dd').textContent));
   const previewWrap = $('#preview-wrap');
   const preview = $('#file-preview');
   const documentPreview = $('#document-preview');
@@ -772,7 +798,7 @@ $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
-['#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+['#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#drive-scan-button').addEventListener('click', startScan);

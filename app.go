@@ -99,7 +99,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.21.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.22.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -227,6 +227,13 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 	})
 }
 
+func (a *App) GetFileDetails(id int64) (database.FileResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return database.FileResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.FileDetails(id)
+}
+
 func (a *App) GetSettings() appconfig.Settings {
 	return a.currentSettings()
 }
@@ -319,6 +326,9 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 		Enabled: settings.ImageAnalysisEnabled, JPEG: settings.ImageJPEGEnabled, PNG: settings.ImagePNGEnabled, GIF: settings.ImageGIFEnabled,
 		PerFileBytes: int64(settings.ImageHeaderMB) << 20, TotalBytes: int64(settings.ImageScanBudgetMB) << 20,
 		PerFileUnlimited: settings.ImageHeaderUnlimited, TotalUnlimited: settings.ImageScanBudgetUnlimited,
+	}, scanner.EXIFAnalysisOptions{
+		Enabled: settings.EXIFEnabled, PerFileBytes: int64(settings.EXIFFileMB) << 20, TotalBytes: int64(settings.EXIFTotalMB) << 20,
+		PerFileUnlimited: settings.EXIFFileUnlimited, TotalUnlimited: settings.EXIFTotalUnlimited,
 	}, func(count int, path string) {
 		if count == 1 || count%250 == 0 {
 			wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": count, "path": path})
