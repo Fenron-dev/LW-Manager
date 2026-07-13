@@ -28,13 +28,32 @@ type Report struct {
 	Skipped int
 }
 
-func Scan(ctx context.Context, sourceRoot, excludedRoot string, progress func(int, string)) (Report, error) {
+type ImageAnalysisOptions struct {
+	Enabled                          bool
+	JPEG, PNG, GIF                   bool
+	PerFileBytes, TotalBytes         int64
+	PerFileUnlimited, TotalUnlimited bool
+}
+
+type countingReader struct {
+	reader io.Reader
+	read   int64
+}
+
+func (reader *countingReader) Read(buffer []byte) (int, error) {
+	count, err := reader.reader.Read(buffer)
+	reader.read += int64(count)
+	return count, err
+}
+
+func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions ImageAnalysisOptions, progress func(int, string)) (Report, error) {
 	root, err := filepath.Abs(sourceRoot)
 	if err != nil {
 		return Report{}, err
 	}
 	excluded, _ := filepath.Abs(excludedRoot)
 	report := Report{Files: make([]File, 0, 1024)}
+	var imageBytesRead int64
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -70,7 +89,7 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, progress func(in
 		if separator := strings.IndexByte(mediaType, ';'); separator >= 0 {
 			mediaType = mediaType[:separator]
 		}
-		width, height := imageDimensions(path, extension)
+		width, height := imageDimensions(path, extension, imageOptions, &imageBytesRead)
 		report.Files = append(report.Files, File{Path: filepath.ToSlash(relative), Filename: entry.Name(), Extension: strings.TrimPrefix(extension, "."), Size: info.Size(), MIMEType: mediaType, Width: width, Height: height, Modified: info.ModTime()})
 		report.Bytes += info.Size()
 		if progress != nil {
@@ -81,18 +100,47 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, progress func(in
 	return report, err
 }
 
-func imageDimensions(path, extension string) (int, int) {
+func imageDimensions(path, extension string, options ImageAnalysisOptions, totalRead *int64) (int, int) {
+	if !options.Enabled {
+		return 0, 0
+	}
 	switch extension {
-	case ".jpg", ".jpeg", ".png", ".gif":
+	case ".jpg", ".jpeg":
+		if !options.JPEG {
+			return 0, 0
+		}
+	case ".png":
+		if !options.PNG {
+			return 0, 0
+		}
+	case ".gif":
+		if !options.GIF {
+			return 0, 0
+		}
 	default:
 		return 0, 0
+	}
+	limit := options.PerFileBytes
+	if options.PerFileUnlimited || limit <= 0 {
+		limit = 1<<63 - 1
+	}
+	if !options.TotalUnlimited {
+		remaining := options.TotalBytes - *totalRead
+		if remaining <= 0 {
+			return 0, 0
+		}
+		if remaining < limit {
+			limit = remaining
+		}
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, 0
 	}
 	defer file.Close()
-	config, _, err := image.DecodeConfig(io.LimitReader(file, 4<<20))
+	reader := &countingReader{reader: io.LimitReader(file, limit)}
+	config, _, err := image.DecodeConfig(reader)
+	*totalRead += reader.read
 	if err != nil || config.Width <= 0 || config.Height <= 0 {
 		return 0, 0
 	}

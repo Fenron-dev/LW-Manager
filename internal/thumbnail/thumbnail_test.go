@@ -24,7 +24,7 @@ func TestVideoIsReturnedForEmbeddedPreview(t *testing.T) {
 	if err := os.WriteFile(source, []byte("test-video"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := DataURLWithLimits(source, filepath.Join(directory, "cache"), "test", 100, 40, 50)
+	result, err := DataURLWithLimits(source, filepath.Join(directory, "cache"), "test", Limits{ImageEnabled: true, ImageMB: 100, CacheUnlimited: true, PDFMB: 40, VideoMB: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,5 +60,24 @@ func TestPDFIsReturnedForEmbeddedPreview(t *testing.T) {
 	}
 	if !strings.HasPrefix(result, "data:application/pdf;base64,") {
 		t.Fatalf("unexpected data URL: %s", result)
+	}
+}
+
+func TestTrimCacheHonorsTotalLimit(t *testing.T) {
+	directory := t.TempDir()
+	for _, name := range []string{"first.jpg", "second.jpg"} {
+		if err := os.WriteFile(filepath.Join(directory, name), make([]byte, 700), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := TrimCache(directory, 800); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("cache contains %d files, want 1", len(entries))
 	}
 }

@@ -8,16 +8,34 @@ import (
 )
 
 type Settings struct {
-	Version        int  `json:"version"`
-	ArchiveEnabled bool `json:"archiveEnabled"`
-	MaxSnapshots   int  `json:"maxSnapshots"`
-	ImagePreviewMB int  `json:"imagePreviewMB"`
-	PDFPreviewMB   int  `json:"pdfPreviewMB"`
-	VideoPreviewMB int  `json:"videoPreviewMB"`
+	Version                  int  `json:"version"`
+	ArchiveEnabled           bool `json:"archiveEnabled"`
+	MaxSnapshots             int  `json:"maxSnapshots"`
+	ImageAnalysisEnabled     bool `json:"imageAnalysisEnabled"`
+	ImageJPEGEnabled         bool `json:"imageJPEGEnabled"`
+	ImagePNGEnabled          bool `json:"imagePNGEnabled"`
+	ImageGIFEnabled          bool `json:"imageGIFEnabled"`
+	ImageHeaderMB            int  `json:"imageHeaderMB"`
+	ImageHeaderUnlimited     bool `json:"imageHeaderUnlimited"`
+	ImageScanBudgetMB        int  `json:"imageScanBudgetMB"`
+	ImageScanBudgetUnlimited bool `json:"imageScanBudgetUnlimited"`
+	ImagePreviewEnabled      bool `json:"imagePreviewEnabled"`
+	ImagePreviewMB           int  `json:"imagePreviewMB"`
+	ImagePreviewUnlimited    bool `json:"imagePreviewUnlimited"`
+	ThumbnailCacheMB         int  `json:"thumbnailCacheMB"`
+	ThumbnailCacheUnlimited  bool `json:"thumbnailCacheUnlimited"`
+	PDFPreviewMB             int  `json:"pdfPreviewMB"`
+	VideoPreviewMB           int  `json:"videoPreviewMB"`
 }
 
 func Defaults() Settings {
-	return Settings{Version: 1, ArchiveEnabled: true, MaxSnapshots: 10, ImagePreviewMB: 100, PDFPreviewMB: 40, VideoPreviewMB: 50}
+	return Settings{
+		Version: 2, ArchiveEnabled: true, MaxSnapshots: 10,
+		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true,
+		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
+		ImagePreviewEnabled: true, ImagePreviewMB: 100, ThumbnailCacheMB: 500, ThumbnailCacheUnlimited: true,
+		PDFPreviewMB: 40, VideoPreviewMB: 50,
+	}
 }
 
 func Load(path string) (Settings, error) {
@@ -42,7 +60,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 1
+	settings.Version = 2
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -67,6 +85,15 @@ func (settings Settings) Validate() error {
 	}
 	if settings.ImagePreviewMB < 1 || settings.ImagePreviewMB > 100 {
 		return fmt.Errorf("Bildlimit muss zwischen 1 und 100 MB liegen")
+	}
+	if settings.ImageHeaderMB < 1 || settings.ImageHeaderMB > 1024 {
+		return fmt.Errorf("Header-Limit muss zwischen 1 und 1024 MB liegen")
+	}
+	if settings.ImageScanBudgetMB < 1 || settings.ImageScanBudgetMB > 1_000_000 {
+		return fmt.Errorf("Analyse-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.ThumbnailCacheMB < 1 || settings.ThumbnailCacheMB > 1_000_000 {
+		return fmt.Errorf("Vorschau-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.PDFPreviewMB < 1 || settings.PDFPreviewMB > 100 {
 		return fmt.Errorf("PDF-Limit muss zwischen 1 und 100 MB liegen")

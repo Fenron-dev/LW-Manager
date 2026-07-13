@@ -99,7 +99,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.20.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.21.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -220,7 +220,11 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 		return "", err
 	}
 	settings := a.currentSettings()
-	return thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size), settings.ImagePreviewMB, settings.PDFPreviewMB, settings.VideoPreviewMB)
+	return thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size), thumbnail.Limits{
+		ImageEnabled: settings.ImagePreviewEnabled, ImageMB: settings.ImagePreviewMB,
+		ImageUnlimited: settings.ImagePreviewUnlimited, CacheMB: settings.ThumbnailCacheMB,
+		CacheUnlimited: settings.ThumbnailCacheUnlimited, PDFMB: settings.PDFPreviewMB, VideoMB: settings.VideoPreviewMB,
+	})
 }
 
 func (a *App) GetSettings() appconfig.Settings {
@@ -230,6 +234,15 @@ func (a *App) GetSettings() appconfig.Settings {
 func (a *App) SaveSettings(settings appconfig.Settings) error {
 	if a.initErr != nil || a.configPath == "" {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if !settings.ThumbnailCacheUnlimited {
+		cache, err := vault.AssetPath(a.root, "thumbnails")
+		if err != nil {
+			return err
+		}
+		if err := thumbnail.TrimCache(cache, int64(settings.ThumbnailCacheMB)<<20); err != nil {
+			return fmt.Errorf("Vorschau-Cache begrenzen: %w", err)
+		}
 	}
 	if err := appconfig.Save(a.configPath, settings); err != nil {
 		return err
@@ -301,7 +314,12 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 	a.scanMu.Lock()
 	defer a.scanMu.Unlock()
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": 0, "path": selected})
-	report, err := scanner.Scan(a.ctx, selected, a.root, func(count int, path string) {
+	settings := a.currentSettings()
+	report, err := scanner.Scan(a.ctx, selected, a.root, scanner.ImageAnalysisOptions{
+		Enabled: settings.ImageAnalysisEnabled, JPEG: settings.ImageJPEGEnabled, PNG: settings.ImagePNGEnabled, GIF: settings.ImageGIFEnabled,
+		PerFileBytes: int64(settings.ImageHeaderMB) << 20, TotalBytes: int64(settings.ImageScanBudgetMB) << 20,
+		PerFileUnlimited: settings.ImageHeaderUnlimited, TotalUnlimited: settings.ImageScanBudgetUnlimited,
+	}, func(count int, path string) {
 		if count == 1 || count%250 == 0 {
 			wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": count, "path": path})
 		}
@@ -310,7 +328,6 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 		return ScanResult{}, err
 	}
 	totalSize, usedSize, _ := storage.Usage(selected)
-	settings := a.currentSettings()
 	identity, _ := storage.Identify(selected)
 	label := filepath.Base(filepath.Clean(selected))
 	if identity.Label != "" {

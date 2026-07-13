@@ -14,25 +14,34 @@ import (
 )
 
 func DataURL(source, cacheDir, identity string) (string, error) {
-	return DataURLWithLimits(source, cacheDir, identity, 100, 40, 50)
+	return DataURLWithLimits(source, cacheDir, identity, Limits{ImageEnabled: true, ImageMB: 100, CacheUnlimited: true, PDFMB: 40, VideoMB: 50})
 }
 
-func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimitMB, videoLimitMB int) (string, error) {
+type Limits struct {
+	ImageEnabled, ImageUnlimited, CacheUnlimited bool
+	ImageMB, CacheMB, PDFMB, VideoMB             int
+}
+
+func DataURLWithLimits(source, cacheDir, identity string, limits Limits) (string, error) {
 	info, err := os.Stat(source)
 	if err != nil {
 		return "", err
 	}
-	imageLimit := int64(imageLimitMB) << 20
-	pdfLimit := int64(pdfLimitMB) << 20
-	videoLimit := int64(videoLimitMB) << 20
+	imageLimit := int64(limits.ImageMB) << 20
+	pdfLimit := int64(limits.PDFMB) << 20
+	videoLimit := int64(limits.VideoMB) << 20
 	extension := filepath.Ext(source)
 	videoMIME := videoMIMEType(extension)
-	if info.Size() > imageLimit && !strings.EqualFold(extension, ".pdf") && videoMIME == "" {
-		return "", fmt.Errorf("Bild ist größer als %d MB", imageLimitMB)
+	isImage := !strings.EqualFold(extension, ".pdf") && videoMIME == ""
+	if isImage && !limits.ImageEnabled {
+		return "", fmt.Errorf("Bildvorschauen sind in den Einstellungen deaktiviert")
+	}
+	if isImage && !limits.ImageUnlimited && info.Size() > imageLimit {
+		return "", fmt.Errorf("Bild ist größer als %d MB", limits.ImageMB)
 	}
 	if strings.EqualFold(extension, ".pdf") {
 		if info.Size() > pdfLimit {
-			return "", fmt.Errorf("PDF-Vorschau ist größer als %d MB", pdfLimitMB)
+			return "", fmt.Errorf("PDF-Vorschau ist größer als %d MB", limits.PDFMB)
 		}
 		data, err := os.ReadFile(source)
 		if err != nil {
@@ -49,7 +58,7 @@ func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimit
 	}
 	if videoMIME != "" {
 		if info.Size() > videoLimit {
-			return "", fmt.Errorf("Video-Vorschau ist größer als %d MB", videoLimitMB)
+			return "", fmt.Errorf("Video-Vorschau ist größer als %d MB", limits.VideoMB)
 		}
 		data, err := os.ReadFile(source)
 		if err != nil {
@@ -109,6 +118,17 @@ func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimit
 		_ = os.Remove(temporary)
 		return "", closeErr
 	}
+	if !limits.CacheUnlimited {
+		temporaryInfo, statErr := os.Stat(temporary)
+		if statErr != nil {
+			_ = os.Remove(temporary)
+			return "", statErr
+		}
+		if err := makeCacheSpace(cacheDir, int64(limits.CacheMB)<<20, temporaryInfo.Size(), cachePath); err != nil {
+			_ = os.Remove(temporary)
+			return "", err
+		}
+	}
 	if err := os.Rename(temporary, cachePath); err != nil {
 		_ = os.Remove(temporary)
 		return "", err
@@ -118,6 +138,56 @@ func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimit
 		return "", err
 	}
 	return encode(data), nil
+}
+
+func makeCacheSpace(cacheDir string, maximum, incoming int64, keep string) error {
+	if incoming > maximum {
+		return fmt.Errorf("Vorschaudatei überschreitet das Cache-Gesamtlimit")
+	}
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	type cachedFile struct {
+		path     string
+		size     int64
+		modified int64
+	}
+	files := make([]cachedFile, 0, len(entries))
+	var used int64
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".jpg") {
+			continue
+		}
+		path := filepath.Join(cacheDir, entry.Name())
+		if path == keep {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			continue
+		}
+		used += info.Size()
+		files = append(files, cachedFile{path: path, size: info.Size(), modified: info.ModTime().UnixNano()})
+	}
+	for used+incoming > maximum && len(files) > 0 {
+		oldest := 0
+		for index := 1; index < len(files); index++ {
+			if files[index].modified < files[oldest].modified {
+				oldest = index
+			}
+		}
+		if err := os.Remove(files[oldest].path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		used -= files[oldest].size
+		files = append(files[:oldest], files[oldest+1:]...)
+	}
+	return nil
+}
+
+func TrimCache(cacheDir string, maximum int64) error {
+	return makeCacheSpace(cacheDir, maximum, 0, "")
 }
 
 func videoMIMEType(extension string) string {

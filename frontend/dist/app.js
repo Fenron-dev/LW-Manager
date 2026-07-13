@@ -91,14 +91,26 @@ async function showSettings() {
   $('#page-title').textContent = 'Einstellungen';
   activateNavigation('#nav-settings');
   $('#settings-status').textContent = '';
-  ensureVideoSettingsField();
   try {
     const settings = await window.go.main.App.GetSettings();
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
+    $('#setting-image-analysis-enabled').checked = settings.imageAnalysisEnabled;
+    $('#setting-image-jpeg').checked = settings.imageJPEGEnabled;
+    $('#setting-image-png').checked = settings.imagePNGEnabled;
+    $('#setting-image-gif').checked = settings.imageGIFEnabled;
+    $('#setting-image-header-limit').value = settings.imageHeaderMB;
+    $('#setting-image-header-unlimited').checked = settings.imageHeaderUnlimited;
+    $('#setting-image-scan-limit').value = settings.imageScanBudgetMB;
+    $('#setting-image-scan-unlimited').checked = settings.imageScanBudgetUnlimited;
+    $('#setting-image-preview-enabled').checked = settings.imagePreviewEnabled;
     $('#setting-image-limit').value = settings.imagePreviewMB;
+    $('#setting-image-preview-unlimited').checked = settings.imagePreviewUnlimited;
+    $('#setting-thumbnail-cache-limit').value = settings.thumbnailCacheMB;
+    $('#setting-thumbnail-cache-unlimited').checked = settings.thumbnailCacheUnlimited;
     $('#setting-pdf-limit').value = settings.pdfPreviewMB;
     $('#setting-video-limit').value = settings.videoPreviewMB;
+    syncSettingsControls();
   } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
 }
 
@@ -107,10 +119,22 @@ async function saveSettings() {
   button.disabled = true;
   try {
     await window.go.main.App.SaveSettings({
-      version: 1,
+      version: 2,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
+      imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked,
+      imageJPEGEnabled: $('#setting-image-jpeg').checked,
+      imagePNGEnabled: $('#setting-image-png').checked,
+      imageGIFEnabled: $('#setting-image-gif').checked,
+      imageHeaderMB: Number($('#setting-image-header-limit').value),
+      imageHeaderUnlimited: $('#setting-image-header-unlimited').checked,
+      imageScanBudgetMB: Number($('#setting-image-scan-limit').value),
+      imageScanBudgetUnlimited: $('#setting-image-scan-unlimited').checked,
+      imagePreviewEnabled: $('#setting-image-preview-enabled').checked,
       imagePreviewMB: Number($('#setting-image-limit').value),
+      imagePreviewUnlimited: $('#setting-image-preview-unlimited').checked,
+      thumbnailCacheMB: Number($('#setting-thumbnail-cache-limit').value),
+      thumbnailCacheUnlimited: $('#setting-thumbnail-cache-unlimited').checked,
       pdfPreviewMB: Number($('#setting-pdf-limit').value),
       videoPreviewMB: Number($('#setting-video-limit').value)
     });
@@ -119,17 +143,15 @@ async function saveSettings() {
   finally { button.disabled = false; }
 }
 
-function ensureVideoSettingsField() {
-  if ($('#setting-video-limit')) return;
-  const label = document.createElement('label');
-  label.textContent = 'Video-Vorschau bis MB';
-  const input = document.createElement('input');
-  input.id = 'setting-video-limit';
-  input.type = 'number';
-  input.min = '1';
-  input.max = '250';
-  label.append(input);
-  $('#settings-view .searchbar').append(label);
+function syncSettingsControls() {
+  const analysisEnabled = $('#setting-image-analysis-enabled').checked;
+  ['#setting-image-jpeg', '#setting-image-png', '#setting-image-gif', '#setting-image-header-unlimited', '#setting-image-scan-unlimited'].forEach((selector) => { $(selector).disabled = !analysisEnabled; });
+  $('#setting-image-header-limit').disabled = !analysisEnabled || $('#setting-image-header-unlimited').checked;
+  $('#setting-image-scan-limit').disabled = !analysisEnabled || $('#setting-image-scan-unlimited').checked;
+  const previewEnabled = $('#setting-image-preview-enabled').checked;
+  ['#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => { $(selector).disabled = !previewEnabled; });
+  $('#setting-image-limit').disabled = !previewEnabled || $('#setting-image-preview-unlimited').checked;
+  $('#setting-thumbnail-cache-limit').disabled = !previewEnabled || $('#setting-thumbnail-cache-unlimited').checked;
 }
 
 async function loadInfo() {
@@ -750,6 +772,9 @@ $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
+['#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+  $(selector).addEventListener('change', syncSettingsControls);
+});
 $('#drive-scan-button').addEventListener('click', startScan);
 $('#search-button').addEventListener('click', () => loadLibrary(1));
 $('#search-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadLibrary(1); });
