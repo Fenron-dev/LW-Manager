@@ -105,7 +105,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.24.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.25.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -241,7 +241,7 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 	}
 	settings := a.currentSettings()
 	return thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size), thumbnail.Limits{
-		ImageEnabled: settings.ImagePreviewEnabled, ImageMB: settings.ImagePreviewMB,
+		ImageEnabled: settings.ImagePreviewEnabled, HEICEnabled: settings.HEICPreviewEnabled, ImageMB: settings.ImagePreviewMB,
 		ImageUnlimited: settings.ImagePreviewUnlimited, CacheMB: settings.ThumbnailCacheMB,
 		CacheUnlimited: settings.ThumbnailCacheUnlimited, PDFMB: settings.PDFPreviewMB, VideoMB: settings.VideoPreviewMB,
 	})
@@ -369,7 +369,7 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": 0, "path": selected})
 	settings := a.currentSettings()
 	report, err := scanner.Scan(a.ctx, selected, a.root, scanner.ImageAnalysisOptions{
-		Enabled: settings.ImageAnalysisEnabled, JPEG: settings.ImageJPEGEnabled, PNG: settings.ImagePNGEnabled, GIF: settings.ImageGIFEnabled,
+		Enabled: settings.ImageAnalysisEnabled, JPEG: settings.ImageJPEGEnabled, PNG: settings.ImagePNGEnabled, GIF: settings.ImageGIFEnabled, HEIC: settings.ImageHEICEnabled,
 		PerFileBytes: int64(settings.ImageHeaderMB) << 20, TotalBytes: int64(settings.ImageScanBudgetMB) << 20,
 		PerFileUnlimited: settings.ImageHeaderUnlimited, TotalUnlimited: settings.ImageScanBudgetUnlimited,
 	}, scanner.EXIFAnalysisOptions{

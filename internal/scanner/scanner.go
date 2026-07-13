@@ -33,7 +33,7 @@ type Report struct {
 
 type ImageAnalysisOptions struct {
 	Enabled                          bool
-	JPEG, PNG, GIF                   bool
+	JPEG, PNG, GIF, HEIC             bool
 	PerFileBytes, TotalBytes         int64
 	PerFileUnlimited, TotalUnlimited bool
 }
@@ -230,6 +230,10 @@ func imageDimensions(path, extension string, options ImageAnalysisOptions, total
 		if !options.GIF {
 			return 0, 0
 		}
+	case ".heic", ".heif":
+		if !options.HEIC {
+			return 0, 0
+		}
 	default:
 		return 0, 0
 	}
@@ -252,6 +256,14 @@ func imageDimensions(path, extension string, options ImageAnalysisOptions, total
 	}
 	defer file.Close()
 	reader := &countingReader{reader: io.LimitReader(file, limit)}
+	if extension == ".heic" || extension == ".heif" {
+		width, height, err := heifDimensions(reader)
+		*totalRead += reader.read
+		if err != nil || width <= 0 || height <= 0 {
+			return 0, 0
+		}
+		return width, height
+	}
 	config, _, err := image.DecodeConfig(reader)
 	*totalRead += reader.read
 	if err != nil || config.Width <= 0 || config.Height <= 0 {

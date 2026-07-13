@@ -14,12 +14,12 @@ import (
 )
 
 func DataURL(source, cacheDir, identity string) (string, error) {
-	return DataURLWithLimits(source, cacheDir, identity, Limits{ImageEnabled: true, ImageMB: 100, CacheUnlimited: true, PDFMB: 40, VideoMB: 50})
+	return DataURLWithLimits(source, cacheDir, identity, Limits{ImageEnabled: true, HEICEnabled: true, ImageMB: 100, CacheUnlimited: true, PDFMB: 40, VideoMB: 50})
 }
 
 type Limits struct {
-	ImageEnabled, ImageUnlimited, CacheUnlimited bool
-	ImageMB, CacheMB, PDFMB, VideoMB             int
+	ImageEnabled, HEICEnabled, ImageUnlimited, CacheUnlimited bool
+	ImageMB, CacheMB, PDFMB, VideoMB                          int
 }
 
 func DataURLWithLimits(source, cacheDir, identity string, limits Limits) (string, error) {
@@ -31,10 +31,14 @@ func DataURLWithLimits(source, cacheDir, identity string, limits Limits) (string
 	pdfLimit := int64(limits.PDFMB) << 20
 	videoLimit := int64(limits.VideoMB) << 20
 	extension := filepath.Ext(source)
+	isHEIC := strings.EqualFold(extension, ".heic") || strings.EqualFold(extension, ".heif")
 	videoMIME := videoMIMEType(extension)
 	isImage := !strings.EqualFold(extension, ".pdf") && videoMIME == ""
 	if isImage && !limits.ImageEnabled {
 		return "", fmt.Errorf("Bildvorschauen sind in den Einstellungen deaktiviert")
+	}
+	if isHEIC && !limits.HEICEnabled {
+		return "", fmt.Errorf("HEIC-Vorschauen sind in den Einstellungen deaktiviert")
 	}
 	if isImage && !limits.ImageUnlimited && info.Size() > imageLimit {
 		return "", fmt.Errorf("Bild ist größer als %d MB", limits.ImageMB)
@@ -70,6 +74,37 @@ func DataURLWithLimits(source, cacheDir, identity string, limits Limits) (string
 	cachePath := filepath.Join(cacheDir, key+".jpg")
 	if cached, err := os.ReadFile(cachePath); err == nil {
 		return encode(cached), nil
+	}
+	if isHEIC {
+		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+			return "", err
+		}
+		temporary := cachePath + ".tmp"
+		_ = os.Remove(temporary)
+		if err := convertHEIC(source, temporary); err != nil {
+			_ = os.Remove(temporary)
+			return "", err
+		}
+		if !limits.CacheUnlimited {
+			temporaryInfo, statErr := os.Stat(temporary)
+			if statErr != nil {
+				_ = os.Remove(temporary)
+				return "", statErr
+			}
+			if err := makeCacheSpace(cacheDir, int64(limits.CacheMB)<<20, temporaryInfo.Size(), cachePath); err != nil {
+				_ = os.Remove(temporary)
+				return "", err
+			}
+		}
+		if err := os.Rename(temporary, cachePath); err != nil {
+			_ = os.Remove(temporary)
+			return "", err
+		}
+		data, err := os.ReadFile(cachePath)
+		if err != nil {
+			return "", err
+		}
+		return encode(data), nil
 	}
 	file, err := os.Open(source)
 	if err != nil {

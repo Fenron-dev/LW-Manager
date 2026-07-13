@@ -63,6 +63,18 @@ func TestPDFIsReturnedForEmbeddedPreview(t *testing.T) {
 	}
 }
 
+func TestHEICPreviewCanBeDisabled(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, "photo.heic")
+	if err := os.WriteFile(source, []byte("test-heic"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := DataURLWithLimits(source, filepath.Join(directory, "cache"), "test", Limits{ImageEnabled: true, HEICEnabled: false, ImageMB: 100, CacheUnlimited: true})
+	if err == nil || !strings.Contains(err.Error(), "deaktiviert") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestTrimCacheHonorsTotalLimit(t *testing.T) {
 	directory := t.TempDir()
 	for _, name := range []string{"first.jpg", "second.jpg"} {

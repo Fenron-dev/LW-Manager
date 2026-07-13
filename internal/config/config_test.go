@@ -15,7 +15,7 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.VolumeDetectionEnabled || !settings.ArchiveEnabled || settings.MaxSnapshots != 10 {
 		t.Fatalf("unexpected defaults: %+v", settings)
 	}
-	if !settings.ImageAnalysisEnabled || !settings.ImageJPEGEnabled || !settings.ImagePNGEnabled || !settings.ImageGIFEnabled || settings.ImageHeaderMB != 4 {
+	if !settings.ImageAnalysisEnabled || !settings.ImageJPEGEnabled || !settings.ImagePNGEnabled || !settings.ImageGIFEnabled || !settings.ImageHEICEnabled || settings.ImageHeaderMB != 4 {
 		t.Fatalf("unexpected image analysis defaults: %+v", settings)
 	}
 	if settings.EXIFEnabled || settings.EXIFFileMB != 8 || !settings.EXIFTotalUnlimited {
@@ -23,6 +23,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	}
 	if settings.TextIndexEnabled || !settings.TextDocumentsEnabled || !settings.TextDataEnabled || !settings.TextSourceEnabled || settings.TextFileMB != 2 || settings.TextTotalMB != 500 {
 		t.Fatalf("unexpected text index defaults: %+v", settings)
+	}
+	if !settings.ImagePreviewEnabled || !settings.HEICPreviewEnabled {
+		t.Fatalf("unexpected preview defaults: %+v", settings)
 	}
 	settings.MaxSnapshots = 3
 	if err := Save(path, settings); err != nil {

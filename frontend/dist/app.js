@@ -100,6 +100,7 @@ async function showSettings() {
     $('#setting-image-jpeg').checked = settings.imageJPEGEnabled;
     $('#setting-image-png').checked = settings.imagePNGEnabled;
     $('#setting-image-gif').checked = settings.imageGIFEnabled;
+    $('#setting-image-heic').checked = settings.imageHEICEnabled;
     $('#setting-image-header-limit').value = settings.imageHeaderMB;
     $('#setting-image-header-unlimited').checked = settings.imageHeaderUnlimited;
     $('#setting-image-scan-limit').value = settings.imageScanBudgetMB;
@@ -118,6 +119,7 @@ async function showSettings() {
     $('#setting-text-total-limit').value = settings.textTotalMB;
     $('#setting-text-total-unlimited').checked = settings.textTotalUnlimited;
     $('#setting-image-preview-enabled').checked = settings.imagePreviewEnabled;
+    $('#setting-heic-preview').checked = settings.heicPreviewEnabled;
     $('#setting-image-limit').value = settings.imagePreviewMB;
     $('#setting-image-preview-unlimited').checked = settings.imagePreviewUnlimited;
     $('#setting-thumbnail-cache-limit').value = settings.thumbnailCacheMB;
@@ -133,7 +135,7 @@ async function saveSettings() {
   button.disabled = true;
   try {
     await window.go.main.App.SaveSettings({
-      version: 5,
+      version: 6,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
@@ -141,6 +143,7 @@ async function saveSettings() {
       imageJPEGEnabled: $('#setting-image-jpeg').checked,
       imagePNGEnabled: $('#setting-image-png').checked,
       imageGIFEnabled: $('#setting-image-gif').checked,
+      imageHEICEnabled: $('#setting-image-heic').checked,
       imageHeaderMB: Number($('#setting-image-header-limit').value),
       imageHeaderUnlimited: $('#setting-image-header-unlimited').checked,
       imageScanBudgetMB: Number($('#setting-image-scan-limit').value),
@@ -159,6 +162,7 @@ async function saveSettings() {
       textTotalMB: Number($('#setting-text-total-limit').value),
       textTotalUnlimited: $('#setting-text-total-unlimited').checked,
       imagePreviewEnabled: $('#setting-image-preview-enabled').checked,
+      heicPreviewEnabled: $('#setting-heic-preview').checked,
       imagePreviewMB: Number($('#setting-image-limit').value),
       imagePreviewUnlimited: $('#setting-image-preview-unlimited').checked,
       thumbnailCacheMB: Number($('#setting-thumbnail-cache-limit').value),
@@ -173,7 +177,7 @@ async function saveSettings() {
 
 function syncSettingsControls() {
   const analysisEnabled = $('#setting-image-analysis-enabled').checked;
-  ['#setting-image-jpeg', '#setting-image-png', '#setting-image-gif', '#setting-image-header-unlimited', '#setting-image-scan-unlimited'].forEach((selector) => { $(selector).disabled = !analysisEnabled; });
+  ['#setting-image-jpeg', '#setting-image-png', '#setting-image-gif', '#setting-image-heic', '#setting-image-header-unlimited', '#setting-image-scan-unlimited'].forEach((selector) => { $(selector).disabled = !analysisEnabled; });
   $('#setting-image-header-limit').disabled = !analysisEnabled || $('#setting-image-header-unlimited').checked;
   $('#setting-image-scan-limit').disabled = !analysisEnabled || $('#setting-image-scan-unlimited').checked;
   const exifEnabled = $('#setting-exif-enabled').checked;
@@ -185,7 +189,7 @@ function syncSettingsControls() {
   $('#setting-text-file-limit').disabled = !textEnabled || $('#setting-text-file-unlimited').checked;
   $('#setting-text-total-limit').disabled = !textEnabled || $('#setting-text-total-unlimited').checked;
   const previewEnabled = $('#setting-image-preview-enabled').checked;
-  ['#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => { $(selector).disabled = !previewEnabled; });
+  ['#setting-heic-preview', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => { $(selector).disabled = !previewEnabled; });
   $('#setting-image-limit').disabled = !previewEnabled || $('#setting-image-preview-unlimited').checked;
   $('#setting-thumbnail-cache-limit').disabled = !previewEnabled || $('#setting-thumbnail-cache-unlimited').checked;
 }
@@ -756,7 +760,7 @@ async function openFileDialog(file) {
   const extension = (file.extension || '').toLowerCase();
   const isPDF = file.mimeType === 'application/pdf' || extension === 'pdf';
   const isVideo = file.mimeType?.startsWith('video/') || ['mp4', 'm4v', 'webm', 'ogv', 'ogg', 'mov'].includes(extension);
-  const previewable = file.id && (isPDF || isVideo || file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension));
+  const previewable = file.id && (isPDF || isVideo || file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(extension));
   previewWrap.classList.toggle('hidden', !previewable);
   if (previewable) {
     previewStatus.classList.remove('hidden');

@@ -16,6 +16,7 @@ type Settings struct {
 	ImageJPEGEnabled         bool `json:"imageJPEGEnabled"`
 	ImagePNGEnabled          bool `json:"imagePNGEnabled"`
 	ImageGIFEnabled          bool `json:"imageGIFEnabled"`
+	ImageHEICEnabled         bool `json:"imageHEICEnabled"`
 	ImageHeaderMB            int  `json:"imageHeaderMB"`
 	ImageHeaderUnlimited     bool `json:"imageHeaderUnlimited"`
 	ImageScanBudgetMB        int  `json:"imageScanBudgetMB"`
@@ -34,6 +35,7 @@ type Settings struct {
 	TextTotalMB              int  `json:"textTotalMB"`
 	TextTotalUnlimited       bool `json:"textTotalUnlimited"`
 	ImagePreviewEnabled      bool `json:"imagePreviewEnabled"`
+	HEICPreviewEnabled       bool `json:"heicPreviewEnabled"`
 	ImagePreviewMB           int  `json:"imagePreviewMB"`
 	ImagePreviewUnlimited    bool `json:"imagePreviewUnlimited"`
 	ThumbnailCacheMB         int  `json:"thumbnailCacheMB"`
@@ -44,12 +46,12 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 5, VolumeDetectionEnabled: true, ArchiveEnabled: true, MaxSnapshots: 10,
-		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true,
+		Version: 6, VolumeDetectionEnabled: true, ArchiveEnabled: true, MaxSnapshots: 10,
+		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
 		EXIFFileMB: 8, EXIFTotalMB: 256, EXIFTotalUnlimited: true,
 		TextDocumentsEnabled: true, TextDataEnabled: true, TextSourceEnabled: true, TextFileMB: 2, TextTotalMB: 500,
-		ImagePreviewEnabled: true, ImagePreviewMB: 100, ThumbnailCacheMB: 500, ThumbnailCacheUnlimited: true,
+		ImagePreviewEnabled: true, HEICPreviewEnabled: true, ImagePreviewMB: 100, ThumbnailCacheMB: 500, ThumbnailCacheUnlimited: true,
 		PDFPreviewMB: 40, VideoPreviewMB: 50,
 	}
 }
@@ -76,7 +78,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 5
+	settings.Version = 6
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
