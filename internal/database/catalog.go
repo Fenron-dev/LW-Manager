@@ -20,16 +20,18 @@ var schema string
 
 type Catalog struct{ db, readDB *sql.DB }
 type DriveScan struct {
-	Path, Label string
-	Files       []scanner.File
-	TotalSize   int64
-	UsedSize    int64
-	UUID        string
-	FSType      string
-	Vendor      string
-	Model       string
-	Serial      string
-	DeviceType  string
+	Path, Label  string
+	Files        []scanner.File
+	TotalSize    int64
+	UsedSize     int64
+	UUID         string
+	FSType       string
+	Vendor       string
+	Model        string
+	Serial       string
+	DeviceType   string
+	Archive      bool
+	MaxSnapshots int
 }
 
 type Drive struct {
@@ -699,7 +701,7 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 	if err = tx.QueryRow("SELECT COUNT(*),COALESCE(SUM(size),0) FROM files WHERE drive_id=?", driveID).Scan(&previousCount, &previousBytes); err != nil {
 		return err
 	}
-	if previousCount > 0 {
+	if previousCount > 0 && scan.Archive {
 		result, err := tx.Exec("INSERT INTO scan_snapshots(drive_id,file_count,total_bytes) VALUES(?,?,?)", driveID, previousCount, previousBytes)
 		if err != nil {
 			return err
@@ -711,6 +713,12 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 		if _, err = tx.Exec(`INSERT INTO archived_files(snapshot_id,path,filename,extension,size,mime_type,modified_at)
 			SELECT ?,path,filename,extension,size,mime_type,modified_at FROM files WHERE drive_id=?`, snapshotID, driveID); err != nil {
 			return err
+		}
+		if scan.MaxSnapshots > 0 {
+			if _, err = tx.Exec(`DELETE FROM scan_snapshots WHERE drive_id=? AND id NOT IN
+				(SELECT id FROM scan_snapshots WHERE drive_id=? ORDER BY id DESC LIMIT ?)`, driveID, driveID, scan.MaxSnapshots); err != nil {
+				return err
+			}
 		}
 	}
 	if _, err = tx.Exec("DELETE FROM files WHERE drive_id=?", driveID); err != nil {

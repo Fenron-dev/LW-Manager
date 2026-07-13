@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	appconfig "github.com/dennis/vaultapp/internal/config"
 	"github.com/dennis/vaultapp/internal/database"
 	"github.com/dennis/vaultapp/internal/scanner"
 	"github.com/dennis/vaultapp/internal/storage"
@@ -21,11 +22,13 @@ import (
 )
 
 type App struct {
-	ctx     context.Context
-	mu      sync.Mutex
-	root    string
-	catalog *database.Catalog
-	initErr error
+	ctx        context.Context
+	mu         sync.Mutex
+	root       string
+	configPath string
+	settings   appconfig.Settings
+	catalog    *database.Catalog
+	initErr    error
 }
 
 type AppInfo struct {
@@ -72,6 +75,14 @@ func (a *App) Startup(ctx context.Context) {
 	if a.initErr = vault.EnsureLayout(a.root); a.initErr != nil {
 		return
 	}
+	a.configPath, a.initErr = vault.DataPath(a.root, "config.json")
+	if a.initErr != nil {
+		return
+	}
+	a.settings, a.initErr = appconfig.Load(a.configPath)
+	if a.initErr != nil {
+		return
+	}
 	dbPath, err := vault.DataPath(a.root, "vault.db")
 	if err != nil {
 		a.initErr = err
@@ -87,7 +98,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.16.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.17.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -207,7 +218,29 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return thumbnail.DataURL(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size))
+	a.mu.Lock()
+	settings := a.settings
+	a.mu.Unlock()
+	return thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size), settings.ImagePreviewMB, settings.PDFPreviewMB)
+}
+
+func (a *App) GetSettings() appconfig.Settings {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.settings
+}
+
+func (a *App) SaveSettings(settings appconfig.Settings) error {
+	if a.initErr != nil || a.configPath == "" {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if err := appconfig.Save(a.configPath, settings); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.settings = settings
+	a.mu.Unlock()
+	return nil
 }
 
 func (a *App) GetDriveSnapshots(driveID int64) ([]database.Snapshot, error) {
@@ -274,13 +307,16 @@ func (a *App) SelectAndScan() (ScanResult, error) {
 		return ScanResult{}, err
 	}
 	totalSize, usedSize, _ := storage.Usage(selected)
+	a.mu.Lock()
+	settings := a.settings
+	a.mu.Unlock()
 	identity, _ := storage.Identify(selected)
 	label := filepath.Base(filepath.Clean(selected))
 	if identity.Label != "" {
 		label = identity.Label
 	}
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected})
-	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Vendor: identity.Vendor, Model: identity.Model, Serial: identity.Serial, DeviceType: identity.DeviceType}); err != nil {
+	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Vendor: identity.Vendor, Model: identity.Model, Serial: identity.Serial, DeviceType: identity.DeviceType, Archive: settings.ArchiveEnabled, MaxSnapshots: settings.MaxSnapshots}); err != nil {
 		return ScanResult{}, err
 	}
 	result := ScanResult{Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Message: "Scan erfolgreich gespeichert"}

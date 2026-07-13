@@ -31,7 +31,7 @@ function withTimeout(promise, milliseconds, message) {
 }
 
 function activateNavigation(active) {
-  document.querySelectorAll('nav button').forEach((button) => button.classList.remove('active'));
+  document.querySelectorAll('aside button').forEach((button) => button.classList.remove('active'));
   $(active).classList.add('active');
 }
 
@@ -40,6 +40,7 @@ function showOverview() {
   $('#library-view').classList.add('hidden');
   $('#drives-view').classList.add('hidden');
   $('#archive-view').classList.add('hidden');
+  $('#settings-view').classList.add('hidden');
   $('#page-title').textContent = 'Dein Vault auf einen Blick';
   activateNavigation('#nav-overview');
 }
@@ -49,6 +50,7 @@ async function showLibrary() {
   $('#library-view').classList.remove('hidden');
   $('#drives-view').classList.add('hidden');
   $('#archive-view').classList.add('hidden');
+  $('#settings-view').classList.add('hidden');
   $('#page-title').textContent = 'Bibliothek';
   activateNavigation('#nav-library');
   await loadLibrary(1);
@@ -59,6 +61,7 @@ async function showDrives() {
   $('#library-view').classList.add('hidden');
   $('#drives-view').classList.remove('hidden');
   $('#archive-view').classList.add('hidden');
+  $('#settings-view').classList.add('hidden');
   $('#page-title').textContent = 'Datenträger';
   activateNavigation('#nav-drives');
   await loadDrives();
@@ -69,10 +72,45 @@ async function showArchive() {
   $('#library-view').classList.add('hidden');
   $('#drives-view').classList.add('hidden');
   $('#archive-view').classList.remove('hidden');
+  $('#settings-view').classList.add('hidden');
   $('#page-title').textContent = 'Archivvergleich';
   activateNavigation('#nav-archive');
   await loadDrives();
   await loadComparisonSnapshots();
+}
+
+async function showSettings() {
+  $('#overview-view').classList.add('hidden');
+  $('#library-view').classList.add('hidden');
+  $('#drives-view').classList.add('hidden');
+  $('#archive-view').classList.add('hidden');
+  $('#settings-view').classList.remove('hidden');
+  $('#page-title').textContent = 'Einstellungen';
+  activateNavigation('#nav-settings');
+  $('#settings-status').textContent = '';
+  try {
+    const settings = await window.go.main.App.GetSettings();
+    $('#setting-archive-enabled').checked = settings.archiveEnabled;
+    $('#setting-max-snapshots').value = settings.maxSnapshots;
+    $('#setting-image-limit').value = settings.imagePreviewMB;
+    $('#setting-pdf-limit').value = settings.pdfPreviewMB;
+  } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
+}
+
+async function saveSettings() {
+  const button = $('#save-settings-button');
+  button.disabled = true;
+  try {
+    await window.go.main.App.SaveSettings({
+      version: 1,
+      archiveEnabled: $('#setting-archive-enabled').checked,
+      maxSnapshots: Number($('#setting-max-snapshots').value),
+      imagePreviewMB: Number($('#setting-image-limit').value),
+      pdfPreviewMB: Number($('#setting-pdf-limit').value)
+    });
+    $('#settings-status').textContent = 'Einstellungen gespeichert ✓';
+  } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
+  finally { button.disabled = false; }
 }
 
 async function loadInfo() {
@@ -611,6 +649,8 @@ $('#nav-overview').addEventListener('click', showOverview);
 $('#nav-library').addEventListener('click', showLibrary);
 $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
+$('#nav-settings').addEventListener('click', showSettings);
+$('#save-settings-button').addEventListener('click', saveSettings);
 $('#drive-scan-button').addEventListener('click', startScan);
 $('#search-button').addEventListener('click', () => loadLibrary(1));
 $('#search-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadLibrary(1); });

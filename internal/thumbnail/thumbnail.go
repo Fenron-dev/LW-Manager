@@ -10,23 +10,27 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-const maxSourceSize = 100 << 20
-const maxDirectSize = 25 << 20
-const maxPDFSize = 40 << 20
-
 func DataURL(source, cacheDir, identity string) (string, error) {
+	return DataURLWithLimits(source, cacheDir, identity, 100, 40)
+}
+
+func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimitMB int) (string, error) {
 	info, err := os.Stat(source)
 	if err != nil {
 		return "", err
 	}
-	if info.Size() > maxSourceSize {
-		return "", fmt.Errorf("Bild ist größer als 100 MB")
+	imageLimit := int64(imageLimitMB) << 20
+	pdfLimit := int64(pdfLimitMB) << 20
+	extension := filepath.Ext(source)
+	if info.Size() > imageLimit && !strings.EqualFold(extension, ".pdf") {
+		return "", fmt.Errorf("Bild ist größer als %d MB", imageLimitMB)
 	}
-	if filepath.Ext(source) == ".pdf" || filepath.Ext(source) == ".PDF" {
-		if info.Size() > maxPDFSize {
-			return "", fmt.Errorf("PDF-Vorschau ist größer als 40 MB")
+	if strings.EqualFold(extension, ".pdf") {
+		if info.Size() > pdfLimit {
+			return "", fmt.Errorf("PDF-Vorschau ist größer als %d MB", pdfLimitMB)
 		}
 		data, err := os.ReadFile(source)
 		if err != nil {
@@ -34,10 +38,7 @@ func DataURL(source, cacheDir, identity string) (string, error) {
 		}
 		return encodeMIME(data, "application/pdf"), nil
 	}
-	if filepath.Ext(source) == ".webp" || filepath.Ext(source) == ".WEBP" {
-		if info.Size() > maxDirectSize {
-			return "", fmt.Errorf("WebP-Vorschau ist größer als 25 MB")
-		}
+	if strings.EqualFold(extension, ".webp") {
 		data, err := os.ReadFile(source)
 		if err != nil {
 			return "", err
