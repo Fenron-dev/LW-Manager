@@ -14,18 +14,20 @@ import (
 )
 
 func DataURL(source, cacheDir, identity string) (string, error) {
-	return DataURLWithLimits(source, cacheDir, identity, 100, 40)
+	return DataURLWithLimits(source, cacheDir, identity, 100, 40, 50)
 }
 
-func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimitMB int) (string, error) {
+func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimitMB, videoLimitMB int) (string, error) {
 	info, err := os.Stat(source)
 	if err != nil {
 		return "", err
 	}
 	imageLimit := int64(imageLimitMB) << 20
 	pdfLimit := int64(pdfLimitMB) << 20
+	videoLimit := int64(videoLimitMB) << 20
 	extension := filepath.Ext(source)
-	if info.Size() > imageLimit && !strings.EqualFold(extension, ".pdf") {
+	videoMIME := videoMIMEType(extension)
+	if info.Size() > imageLimit && !strings.EqualFold(extension, ".pdf") && videoMIME == "" {
 		return "", fmt.Errorf("Bild ist größer als %d MB", imageLimitMB)
 	}
 	if strings.EqualFold(extension, ".pdf") {
@@ -44,6 +46,16 @@ func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimit
 			return "", err
 		}
 		return encodeMIME(data, "image/webp"), nil
+	}
+	if videoMIME != "" {
+		if info.Size() > videoLimit {
+			return "", fmt.Errorf("Video-Vorschau ist größer als %d MB", videoLimitMB)
+		}
+		data, err := os.ReadFile(source)
+		if err != nil {
+			return "", err
+		}
+		return encodeMIME(data, videoMIME), nil
 	}
 	key := fmt.Sprintf("%x", sha256.Sum256([]byte(source+identity)))
 	cachePath := filepath.Join(cacheDir, key+".jpg")
@@ -106,6 +118,21 @@ func DataURLWithLimits(source, cacheDir, identity string, imageLimitMB, pdfLimit
 		return "", err
 	}
 	return encode(data), nil
+}
+
+func videoMIMEType(extension string) string {
+	switch strings.ToLower(extension) {
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
+	case ".ogv", ".ogg":
+		return "video/ogg"
+	case ".mov":
+		return "video/quicktime"
+	default:
+		return ""
+	}
 }
 
 func fit(width, height, maxWidth, maxHeight int) (int, int) {

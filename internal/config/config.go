@@ -13,10 +13,11 @@ type Settings struct {
 	MaxSnapshots   int  `json:"maxSnapshots"`
 	ImagePreviewMB int  `json:"imagePreviewMB"`
 	PDFPreviewMB   int  `json:"pdfPreviewMB"`
+	VideoPreviewMB int  `json:"videoPreviewMB"`
 }
 
 func Defaults() Settings {
-	return Settings{Version: 1, ArchiveEnabled: true, MaxSnapshots: 10, ImagePreviewMB: 100, PDFPreviewMB: 40}
+	return Settings{Version: 1, ArchiveEnabled: true, MaxSnapshots: 10, ImagePreviewMB: 100, PDFPreviewMB: 40, VideoPreviewMB: 50}
 }
 
 func Load(path string) (Settings, error) {
@@ -69,6 +70,9 @@ func (settings Settings) Validate() error {
 	}
 	if settings.PDFPreviewMB < 1 || settings.PDFPreviewMB > 100 {
 		return fmt.Errorf("PDF-Limit muss zwischen 1 und 100 MB liegen")
+	}
+	if settings.VideoPreviewMB < 1 || settings.VideoPreviewMB > 250 {
+		return fmt.Errorf("Videolimit muss zwischen 1 und 250 MB liegen")
 	}
 	return nil
 }

@@ -98,7 +98,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.17.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.18.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -221,7 +221,7 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 	a.mu.Lock()
 	settings := a.settings
 	a.mu.Unlock()
-	return thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size), settings.ImagePreviewMB, settings.PDFPreviewMB)
+	return thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size), settings.ImagePreviewMB, settings.PDFPreviewMB, settings.VideoPreviewMB)
 }
 
 func (a *App) GetSettings() appconfig.Settings {

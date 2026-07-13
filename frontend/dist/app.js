@@ -88,12 +88,14 @@ async function showSettings() {
   $('#page-title').textContent = 'Einstellungen';
   activateNavigation('#nav-settings');
   $('#settings-status').textContent = '';
+  ensureVideoSettingsField();
   try {
     const settings = await window.go.main.App.GetSettings();
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
     $('#setting-image-limit').value = settings.imagePreviewMB;
     $('#setting-pdf-limit').value = settings.pdfPreviewMB;
+    $('#setting-video-limit').value = settings.videoPreviewMB;
   } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
 }
 
@@ -106,11 +108,25 @@ async function saveSettings() {
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       imagePreviewMB: Number($('#setting-image-limit').value),
-      pdfPreviewMB: Number($('#setting-pdf-limit').value)
+      pdfPreviewMB: Number($('#setting-pdf-limit').value),
+      videoPreviewMB: Number($('#setting-video-limit').value)
     });
     $('#settings-status').textContent = 'Einstellungen gespeichert ✓';
   } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
   finally { button.disabled = false; }
+}
+
+function ensureVideoSettingsField() {
+  if ($('#setting-video-limit')) return;
+  const label = document.createElement('label');
+  label.textContent = 'Video-Vorschau bis MB';
+  const input = document.createElement('input');
+  input.id = 'setting-video-limit';
+  input.type = 'number';
+  input.min = '1';
+  input.max = '250';
+  label.append(input);
+  $('#settings-view .searchbar').append(label);
 }
 
 async function loadInfo() {
@@ -570,21 +586,39 @@ function openFileDialog(file) {
   const previewWrap = $('#preview-wrap');
   const preview = $('#file-preview');
   const documentPreview = $('#document-preview');
+  let videoPreview = $('#video-preview');
+  if (!videoPreview) {
+    videoPreview = document.createElement('video');
+    videoPreview.id = 'video-preview';
+    videoPreview.className = 'hidden';
+    videoPreview.controls = true;
+    videoPreview.preload = 'metadata';
+    videoPreview.style.maxWidth = '100%';
+    videoPreview.style.maxHeight = '420px';
+    previewWrap.append(videoPreview);
+  }
   const previewStatus = $('#preview-status');
   preview.removeAttribute('src');
   preview.classList.add('hidden');
   documentPreview.removeAttribute('src');
   documentPreview.classList.add('hidden');
+  videoPreview.pause();
+  videoPreview.removeAttribute('src');
+  videoPreview.classList.add('hidden');
   const extension = (file.extension || '').toLowerCase();
   const isPDF = file.mimeType === 'application/pdf' || extension === 'pdf';
-  const previewable = file.id && (isPDF || file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension));
+  const isVideo = file.mimeType?.startsWith('video/') || ['mp4', 'm4v', 'webm', 'ogv', 'ogg', 'mov'].includes(extension);
+  const previewable = file.id && (isPDF || isVideo || file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension));
   previewWrap.classList.toggle('hidden', !previewable);
   if (previewable) {
     previewStatus.classList.remove('hidden');
     previewStatus.textContent = 'Vorschau wird erzeugt …';
     window.go.main.App.GetImagePreview(file.id).then((dataURL) => {
       if (!$('#file-dialog').open) return;
-      if (isPDF) {
+      if (isVideo) {
+        videoPreview.src = dataURL;
+        videoPreview.classList.remove('hidden');
+      } else if (isPDF) {
         documentPreview.src = dataURL;
         documentPreview.style.width = '100%';
         documentPreview.style.height = '420px';

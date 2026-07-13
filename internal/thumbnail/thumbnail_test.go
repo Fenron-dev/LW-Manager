@@ -18,6 +18,21 @@ func TestFitPreservesBounds(t *testing.T) {
 	}
 }
 
+func TestVideoIsReturnedForEmbeddedPreview(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, "clip.mp4")
+	if err := os.WriteFile(source, []byte("test-video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := DataURLWithLimits(source, filepath.Join(directory, "cache"), "test", 100, 40, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(result, "data:video/mp4;base64,") {
+		t.Fatalf("unexpected data URL: %s", result)
+	}
+}
+
 func TestWebPIsReturnedForDirectBrowserPreview(t *testing.T) {
 	directory := t.TempDir()
 	source := filepath.Join(directory, "preview.webp")
