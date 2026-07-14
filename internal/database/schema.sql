@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS drives (
     device_type TEXT,
     detected_type TEXT,
     storage_location TEXT,
+    note TEXT,
     used_size INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -53,7 +54,9 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,
     captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     file_count INTEGER NOT NULL DEFAULT 0,
-    total_bytes INTEGER NOT NULL DEFAULT 0
+    total_bytes INTEGER NOT NULL DEFAULT 0,
+    protected INTEGER NOT NULL DEFAULT 0,
+    note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS archived_files (
@@ -77,3 +80,24 @@ CREATE TABLE IF NOT EXISTS storage_locations (
     name TEXT UNIQUE NOT NULL COLLATE NOCASE,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL COLLATE NOCASE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS drive_tags (
+    drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (drive_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_tags (
+    snapshot_id INTEGER NOT NULL REFERENCES scan_snapshots(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (snapshot_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_drive_tags_tag ON drive_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_snapshot_tags_tag ON snapshot_tags(tag_id);

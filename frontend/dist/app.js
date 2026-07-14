@@ -364,6 +364,18 @@ function driveName(drive) {
   return drive.displayName || drive.label;
 }
 
+function parseTags(value) {
+  return [...new Set(String(value || '').split(',').map((tag) => tag.trim()).filter(Boolean))];
+}
+
+function appendTagBadges(container, tags = []) {
+  if (!tags.length) return;
+  const badges = document.createElement('span');
+  badges.className = 'tag-badges';
+  tags.forEach((tag) => { const badge = document.createElement('em'); badge.textContent = tag; badges.append(badge); });
+  container.append(badges);
+}
+
 async function loadDrives() {
   const drives = await window.go.main.App.GetDrives();
   await loadConnectedVolumes(drives);
@@ -388,6 +400,7 @@ async function loadDrives() {
     const source = document.createElement('span');
     source.textContent = [drive.inventoryNumber ? `Nr. ${drive.inventoryNumber}` : '', drive.label, drive.storageLocation ? `Lager: ${drive.storageLocation}` : ''].filter(Boolean).join(' · ');
     identity.append(heading, source);
+    appendTagBadges(identity, drive.tags);
     const kind = document.createElement('span');
     kind.className = 'drive-cell';
     kind.textContent = [drive.manufacturer || drive.model, drive.deviceType, drive.fsType].filter(Boolean).join(' · ') || 'Nicht klassifiziert';
@@ -513,7 +526,7 @@ async function loadComparisonSnapshots() {
   select.replaceChildren(new Option('Archivstand auswählen', '0'));
   if (!driveID) return;
   const snapshots = await window.go.main.App.GetDriveSnapshots(driveID);
-  snapshots.forEach((snapshot) => select.add(new Option(`${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien`, String(snapshot.id))));
+  snapshots.forEach((snapshot) => select.add(new Option(`${snapshot.protected ? '🔒 ' : ''}${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien${snapshot.tags?.length ? ` · ${snapshot.tags.join(', ')}` : ''}`, String(snapshot.id))));
   select.value = [...select.options].some((option) => option.value === selected) ? selected : (snapshots[0] ? String(snapshots[0].id) : '0');
 }
 
@@ -606,21 +619,50 @@ async function loadSnapshots(driveID) {
   for (const snapshot of snapshots) {
     const row = document.createElement('div');
     row.className = 'snapshot-row';
+    if (snapshot.protected) row.classList.add('protected');
+    const head = document.createElement('div');
+    head.className = 'snapshot-head';
     const info = document.createElement('button');
     info.type = 'button';
     info.className = 'snapshot-open secondary';
-    info.textContent = `${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(snapshot.totalBytes)}`;
+    info.textContent = `${snapshot.protected ? '🔒 ' : ''}${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(snapshot.totalBytes)}`;
     info.addEventListener('click', () => openSnapshot(snapshot.id));
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'snapshot-delete';
     remove.textContent = 'Löschen';
+    remove.disabled = snapshot.protected;
+    remove.title = snapshot.protected ? 'Geschützte Archivstände können nicht gelöscht werden' : '';
     remove.addEventListener('click', async () => {
       if (!confirm(`Archivstand vom ${formatDate(snapshot.capturedAt)} wirklich unwiderruflich löschen?`)) return;
       await window.go.main.App.DeleteSnapshot(snapshot.id);
       await loadSnapshots(driveID);
     });
-    row.append(info, remove);
+    const protection = document.createElement('label');
+    protection.className = 'setting-toggle snapshot-protection';
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox'; toggle.checked = snapshot.protected;
+    protection.append(toggle, document.createTextNode('Nicht löschbar'));
+    const fields = document.createElement('div'); fields.className = 'snapshot-fields';
+    const noteLabel = document.createElement('label'); noteLabel.textContent = 'Bemerkung';
+    const note = document.createElement('textarea'); note.rows = 2; note.value = snapshot.note || ''; note.placeholder = 'Bemerkung zu diesem Scan-Stand'; noteLabel.append(note);
+    const tagLabel = document.createElement('label'); tagLabel.textContent = 'Tags';
+    const tags = document.createElement('input'); tags.value = (snapshot.tags || []).join(', '); tags.placeholder = 'z. B. Referenz, Übergabe'; tagLabel.append(tags);
+    const save = document.createElement('button'); save.type = 'button'; save.className = 'secondary compact'; save.textContent = 'Angaben speichern';
+    const status = document.createElement('span'); status.className = 'snapshot-save-status';
+    const persist = async () => {
+      save.disabled = true; toggle.disabled = true; status.textContent = 'Wird gespeichert …';
+      try {
+        await window.go.main.App.UpdateSnapshot(snapshot.id, toggle.checked, note.value, parseTags(tags.value));
+        status.textContent = 'Gespeichert ✓'; remove.disabled = toggle.checked; row.classList.toggle('protected', toggle.checked);
+        info.textContent = `${toggle.checked ? '🔒 ' : ''}${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(snapshot.totalBytes)}`;
+        snapshot.protected = toggle.checked; snapshot.note = note.value; snapshot.tags = parseTags(tags.value);
+        loadComparisonSnapshots().catch(() => {});
+      } catch (error) { status.textContent = `Fehler: ${error}`; toggle.checked = snapshot.protected; }
+      finally { save.disabled = false; toggle.disabled = false; }
+    };
+    toggle.addEventListener('change', persist); save.addEventListener('click', persist);
+    head.append(info, protection, remove); fields.append(noteLabel, tagLabel, save, status); row.append(head, fields);
     list.append(row);
   }
 }
@@ -716,6 +758,8 @@ async function openDriveDialog(drive) {
   $('#edit-inventory-number').value = drive.inventoryNumber || '';
   $('#edit-manufacturer').value = drive.manufacturer || '';
   $('#edit-device-type').value = drive.deviceType || '';
+  $('#edit-drive-note').value = drive.note || '';
+  $('#edit-drive-tags').value = (drive.tags || []).join(', ');
   await loadStorageLocations(drive.storageLocation || '');
   $('#drive-detail-uuid').textContent = drive.uuid || 'Nicht verfügbar';
   $('#drive-detail-serial').textContent = drive.serial || 'Vom Datenträger nicht gemeldet';
@@ -733,7 +777,7 @@ async function saveDrive(event) {
   const button = $('#save-drive-button');
   button.disabled = true;
   try {
-    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value, $('#edit-storage-location').value);
+    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value, $('#edit-storage-location').value, $('#edit-drive-note').value, parseTags($('#edit-drive-tags').value));
     $('#drive-save-status').textContent = 'Gespeichert ✓';
     await Promise.all([loadDrives(), loadInfo()]);
     setTimeout(() => $('#drive-dialog').close(), 350);

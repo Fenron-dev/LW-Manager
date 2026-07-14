@@ -114,7 +114,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.26.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.27.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -207,11 +207,11 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation string) error {
+func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note string, tags []string) error {
 	if a.initErr != nil || a.catalog == nil {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
-	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType, storageLocation)
+	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note, tags)
 }
 
 func (a *App) GetStorageLocations() ([]string, error) {
@@ -379,6 +379,13 @@ func (a *App) DeleteSnapshot(snapshotID int64) error {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.DeleteSnapshot(snapshotID)
+}
+
+func (a *App) UpdateSnapshot(snapshotID int64, protected bool, note string, tags []string) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.UpdateSnapshot(snapshotID, protected, note, tags)
 }
 
 func (a *App) CompareSnapshot(snapshotID int64, status, query string, page int) (database.ComparisonResult, error) {

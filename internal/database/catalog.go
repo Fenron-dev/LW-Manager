@@ -36,24 +36,26 @@ type DriveScan struct {
 }
 
 type Drive struct {
-	ID              int64  `json:"id"`
-	Label           string `json:"label"`
-	DisplayName     string `json:"displayName"`
-	InventoryNumber string `json:"inventoryNumber"`
-	Path            string `json:"path"`
-	Manufacturer    string `json:"manufacturer"`
-	DeviceType      string `json:"deviceType"`
-	StorageLocation string `json:"storageLocation"`
-	UUID            string `json:"uuid"`
-	Serial          string `json:"serial"`
-	Vendor          string `json:"vendor"`
-	DetectedType    string `json:"detectedType"`
-	FSType          string `json:"fsType"`
-	Model           string `json:"model"`
-	TotalSize       int64  `json:"totalSize"`
-	UsedSize        int64  `json:"usedSize"`
-	FileCount       int64  `json:"fileCount"`
-	UpdatedAt       string `json:"updatedAt"`
+	ID              int64    `json:"id"`
+	Label           string   `json:"label"`
+	DisplayName     string   `json:"displayName"`
+	InventoryNumber string   `json:"inventoryNumber"`
+	Path            string   `json:"path"`
+	Manufacturer    string   `json:"manufacturer"`
+	DeviceType      string   `json:"deviceType"`
+	StorageLocation string   `json:"storageLocation"`
+	Note            string   `json:"note"`
+	Tags            []string `json:"tags"`
+	UUID            string   `json:"uuid"`
+	Serial          string   `json:"serial"`
+	Vendor          string   `json:"vendor"`
+	DetectedType    string   `json:"detectedType"`
+	FSType          string   `json:"fsType"`
+	Model           string   `json:"model"`
+	TotalSize       int64    `json:"totalSize"`
+	UsedSize        int64    `json:"usedSize"`
+	FileCount       int64    `json:"fileCount"`
+	UpdatedAt       string   `json:"updatedAt"`
 }
 
 type FileResult struct {
@@ -111,10 +113,13 @@ type SourceFile struct {
 }
 
 type Snapshot struct {
-	ID         int64  `json:"id"`
-	CapturedAt string `json:"capturedAt"`
-	FileCount  int64  `json:"fileCount"`
-	TotalBytes int64  `json:"totalBytes"`
+	ID         int64    `json:"id"`
+	CapturedAt string   `json:"capturedAt"`
+	FileCount  int64    `json:"fileCount"`
+	TotalBytes int64    `json:"totalBytes"`
+	Protected  bool     `json:"protected"`
+	Note       string   `json:"note"`
+	Tags       []string `json:"tags"`
 }
 
 type ArchivedFile struct {
@@ -315,7 +320,9 @@ func (c *Catalog) DuplicateGroups() ([]DuplicateGroup, error) {
 
 func (c *Catalog) Drives() ([]Drive, error) {
 	rows, err := c.db.Query(`SELECT d.id,d.label,COALESCE(d.display_name,''),COALESCE(d.inventory_number,''),COALESCE(d.vault_path,''),
-		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),d.uuid,COALESCE(d.serial,''),COALESCE(d.vendor,''),COALESCE(d.detected_type,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
+		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.note,''),
+		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN drive_tags dt ON dt.tag_id=t.id WHERE dt.drive_id=d.id ORDER BY t.name COLLATE NOCASE)),''),
+		d.uuid,COALESCE(d.serial,''),COALESCE(d.vendor,''),COALESCE(d.detected_type,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
 		FROM drives d LEFT JOIN files f ON f.drive_id=d.id GROUP BY d.id ORDER BY COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
@@ -324,17 +331,24 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	drives := make([]Drive, 0)
 	for rows.Next() {
 		var drive Drive
-		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
+		var tags string
+		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.Note, &tags, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
 			return nil, err
 		}
+		drive.Tags = splitStoredTags(tags)
 		drives = append(drives, drive)
 	}
 	return drives, rows.Err()
 }
 
-func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation string) error {
-	result, err := c.db.Exec(`UPDATE drives SET display_name=?,inventory_number=?,manufacturer=?,device_type=?,storage_location=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		strings.TrimSpace(displayName), strings.TrimSpace(inventoryNumber), strings.TrimSpace(manufacturer), strings.TrimSpace(deviceType), strings.TrimSpace(storageLocation), id)
+func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note string, tags []string) error {
+	tx, err := c.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE drives SET display_name=?,inventory_number=?,manufacturer=?,device_type=?,storage_location=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		strings.TrimSpace(displayName), strings.TrimSpace(inventoryNumber), strings.TrimSpace(manufacturer), strings.TrimSpace(deviceType), strings.TrimSpace(storageLocation), strings.TrimSpace(note), id)
 	if err != nil {
 		return err
 	}
@@ -345,7 +359,10 @@ func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufactur
 	if count == 0 {
 		return fmt.Errorf("Datenträger %d wurde nicht gefunden", id)
 	}
-	return nil
+	if err := replaceTags(tx, "drive_tags", "drive_id", id, tags); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (c *Catalog) StorageLocations() ([]string, error) {
@@ -460,7 +477,9 @@ func (c *Catalog) FileDetails(id int64) (FileResult, error) {
 }
 
 func (c *Catalog) Snapshots(driveID int64) ([]Snapshot, error) {
-	rows, err := c.db.Query(`SELECT id,captured_at,file_count,total_bytes FROM scan_snapshots WHERE drive_id=? ORDER BY captured_at DESC,id DESC`, driveID)
+	rows, err := c.db.Query(`SELECT s.id,s.captured_at,s.file_count,s.total_bytes,s.protected,COALESCE(s.note,''),
+		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN snapshot_tags st ON st.tag_id=t.id WHERE st.snapshot_id=s.id ORDER BY t.name COLLATE NOCASE)),'')
+		FROM scan_snapshots s WHERE s.drive_id=? ORDER BY s.captured_at DESC,s.id DESC`, driveID)
 	if err != nil {
 		return nil, err
 	}
@@ -468,16 +487,42 @@ func (c *Catalog) Snapshots(driveID int64) ([]Snapshot, error) {
 	result := make([]Snapshot, 0)
 	for rows.Next() {
 		var snapshot Snapshot
-		if err := rows.Scan(&snapshot.ID, &snapshot.CapturedAt, &snapshot.FileCount, &snapshot.TotalBytes); err != nil {
+		var tags string
+		if err := rows.Scan(&snapshot.ID, &snapshot.CapturedAt, &snapshot.FileCount, &snapshot.TotalBytes, &snapshot.Protected, &snapshot.Note, &tags); err != nil {
 			return nil, err
 		}
+		snapshot.Tags = splitStoredTags(tags)
 		result = append(result, snapshot)
 	}
 	return result, rows.Err()
 }
 
 func (c *Catalog) DeleteSnapshot(id int64) error {
-	result, err := c.db.Exec("DELETE FROM scan_snapshots WHERE id=?", id)
+	result, err := c.db.Exec("DELETE FROM scan_snapshots WHERE id=? AND protected=0", id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		var protected bool
+		if err := c.db.QueryRow("SELECT protected FROM scan_snapshots WHERE id=?", id).Scan(&protected); err == nil && protected {
+			return fmt.Errorf("Archivstand %d ist geschützt und kann nicht gelöscht werden", id)
+		}
+		return fmt.Errorf("Archivstand %d wurde nicht gefunden", id)
+	}
+	return nil
+}
+
+func (c *Catalog) UpdateSnapshot(id int64, protected bool, note string, tags []string) error {
+	tx, err := c.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE scan_snapshots SET protected=?,note=? WHERE id=?`, protected, strings.TrimSpace(note), id)
 	if err != nil {
 		return err
 	}
@@ -488,7 +533,10 @@ func (c *Catalog) DeleteSnapshot(id int64) error {
 	if count == 0 {
 		return fmt.Errorf("Archivstand %d wurde nicht gefunden", id)
 	}
-	return nil
+	if err := replaceTags(tx, "snapshot_tags", "snapshot_id", id, tags); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (c *Catalog) SearchArchive(snapshotID int64, query string, page, pageSize int) (ArchiveResult, error) {
@@ -658,7 +706,7 @@ func (c *Catalog) migrate() error {
 		"display_name": "TEXT", "inventory_number": "TEXT", "manufacturer": "TEXT", "device_type": "TEXT",
 		"storage_location": "TEXT", "total_size": "INTEGER NOT NULL DEFAULT 0", "used_size": "INTEGER NOT NULL DEFAULT 0",
 		"serial": "TEXT", "vendor": "TEXT", "model": "TEXT", "fs_type": "TEXT",
-		"detected_type": "TEXT",
+		"detected_type": "TEXT", "note": "TEXT",
 	}
 	rows, err := c.db.Query("PRAGMA table_info(drives)")
 	if err != nil {
@@ -698,7 +746,70 @@ func (c *Catalog) migrate() error {
 			}
 		}
 	}
+	snapshotColumns := map[string]string{"protected": "INTEGER NOT NULL DEFAULT 0", "note": "TEXT"}
+	for name, definition := range snapshotColumns {
+		var count int
+		if err := c.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('scan_snapshots') WHERE name=?", name).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := c.db.Exec("ALTER TABLE scan_snapshots ADD COLUMN " + name + " " + definition); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+func normalizeTags(tags []string) ([]string, error) {
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(tags))
+	for _, raw := range tags {
+		name := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+		if name == "" {
+			continue
+		}
+		if len([]rune(name)) > 50 {
+			return nil, fmt.Errorf("Tag %q ist länger als 50 Zeichen", name)
+		}
+		key := strings.ToLower(name)
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, name)
+		}
+	}
+	if len(result) > 30 {
+		return nil, fmt.Errorf("höchstens 30 Tags sind erlaubt")
+	}
+	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i]) < strings.ToLower(result[j]) })
+	return result, nil
+}
+
+func replaceTags(tx *sql.Tx, relation, ownerColumn string, ownerID int64, tags []string) error {
+	normalized, err := normalizeTags(tags)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM "+relation+" WHERE "+ownerColumn+"=?", ownerID); err != nil {
+		return err
+	}
+	for _, name := range normalized {
+		if _, err := tx.Exec(`INSERT INTO tags(name) VALUES(?) ON CONFLICT(name) DO NOTHING`, name); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("INSERT INTO "+relation+"("+ownerColumn+",tag_id) SELECT ?,id FROM tags WHERE name=? COLLATE NOCASE", ownerID, name); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(`DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM drive_tags UNION SELECT tag_id FROM snapshot_tags)`)
+	return err
+}
+
+func splitStoredTags(value string) []string {
+	if value == "" {
+		return []string{}
+	}
+	return strings.Split(value, string(rune(31)))
 }
 
 func escapeLike(value string) string {
@@ -754,8 +865,8 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 			return err
 		}
 		if scan.MaxSnapshots > 0 {
-			if _, err = tx.Exec(`DELETE FROM scan_snapshots WHERE drive_id=? AND id NOT IN
-				(SELECT id FROM scan_snapshots WHERE drive_id=? ORDER BY id DESC LIMIT ?)`, driveID, driveID, scan.MaxSnapshots); err != nil {
+			if _, err = tx.Exec(`DELETE FROM scan_snapshots WHERE drive_id=? AND protected=0 AND id NOT IN
+				(SELECT id FROM scan_snapshots WHERE drive_id=? AND protected=0 ORDER BY id DESC LIMIT ?)`, driveID, driveID, scan.MaxSnapshots); err != nil {
 				return err
 			}
 		}
