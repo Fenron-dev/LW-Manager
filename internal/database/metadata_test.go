@@ -49,6 +49,18 @@ func TestDriveMetadataAndTags(t *testing.T) {
 	if drives[0].Note != "Übergabe an Team" || !reflect.DeepEqual(drives[0].Tags, []string{"kunde A", "Mobil"}) {
 		t.Fatalf("metadata = note %q, tags %#v", drives[0].Note, drives[0].Tags)
 	}
+	tags, err := catalog.Tags()
+	if err != nil || len(tags) != 2 || tags[0].Name != "kunde A" || tags[0].DriveCount != 1 || tags[0].SnapshotCount != 0 {
+		t.Fatalf("tags = %#v, %v", tags, err)
+	}
+	result, err := catalog.Search("", "", "KUNDE A", 0, false, 50, 0)
+	if err != nil || result.Total != 1 {
+		t.Fatalf("tagged search = %#v, %v", result, err)
+	}
+	result, err = catalog.Search("", "", "nicht vorhanden", 0, false, 50, 0)
+	if err != nil || result.Total != 0 {
+		t.Fatalf("missing tag search = %#v, %v", result, err)
+	}
 }
 
 func TestProtectedSnapshotSurvivesCleanupAndDelete(t *testing.T) {
@@ -82,6 +94,10 @@ func TestProtectedSnapshotSurvivesCleanupAndDelete(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("protected snapshot metadata missing: %#v", snapshots)
+	}
+	tags, err := catalog.Tags()
+	if err != nil || len(tags) != 2 || tags[0].SnapshotCount != 1 {
+		t.Fatalf("snapshot tags = %#v, %v", tags, err)
 	}
 	if err := catalog.DeleteSnapshot(protectedID); err == nil || !strings.Contains(err.Error(), "geschützt") {
 		t.Fatalf("DeleteSnapshot error = %v", err)

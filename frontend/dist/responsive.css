@@ -170,6 +170,17 @@ main > *,
     flex-direction: column;
   }
 
+  .drive-intro-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .drive-intro-actions select,
+  .drive-intro-actions button {
+    width: 100%;
+  }
+
   .connected-volume-row {
     grid-template-columns: minmax(0, 1fr) auto;
   }

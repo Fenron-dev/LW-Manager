@@ -114,7 +114,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.27.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.28.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -129,7 +129,7 @@ func (a *App) GetAppInfo() AppInfo {
 	return info
 }
 
-func (a *App) SearchFiles(query, extension string, driveID int64, includeContent bool, page int) (LibraryResult, error) {
+func (a *App) SearchFiles(query, extension, tag string, driveID int64, includeContent bool, page int) (LibraryResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return LibraryResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
@@ -137,11 +137,18 @@ func (a *App) SearchFiles(query, extension string, driveID int64, includeContent
 		page = 1
 	}
 	const pageSize = 50
-	result, err := a.catalog.Search(query, extension, driveID, includeContent, pageSize, (page-1)*pageSize)
+	result, err := a.catalog.Search(query, extension, tag, driveID, includeContent, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return LibraryResult{}, err
 	}
 	return LibraryResult{Files: result.Files, Extensions: result.Extensions, Total: result.Total, Page: page, PageSize: pageSize}, nil
+}
+
+func (a *App) GetTags() ([]database.TagSummary, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.Tags()
 }
 
 func (a *App) GetDrives() ([]database.Drive, error) {

@@ -336,7 +336,7 @@ async function loadLibrary(page = 1) {
   libraryPage = Math.max(1, page);
   $('#result-count').textContent = 'Suche läuft …';
   try {
-    const result = await window.go.main.App.SearchFiles($('#search-input').value, $('#extension-filter').value, Number($('#drive-filter').value), $('#content-search').checked, libraryPage);
+    const result = await window.go.main.App.SearchFiles($('#search-input').value, $('#extension-filter').value, $('#library-tag-filter').value, Number($('#drive-filter').value), $('#content-search').checked, libraryPage);
     libraryTotal = result.total;
     libraryPageSize = result.pageSize;
     renderFiles(result.files);
@@ -376,12 +376,31 @@ function appendTagBadges(container, tags = []) {
   container.append(badges);
 }
 
+function fillTagFilter(selector, tags, countKey, emptyLabel) {
+  const select = $(selector);
+  const selected = select.value;
+  select.replaceChildren(new Option(emptyLabel, ''));
+  tags.filter((tag) => tag[countKey] > 0).forEach((tag) => select.add(new Option(`${tag.name} (${tag[countKey].toLocaleString('de-DE')})`, tag.name)));
+  select.value = [...select.options].some((option) => option.value.toLocaleLowerCase('de-DE') === selected.toLocaleLowerCase('de-DE')) ? selected : '';
+}
+
+async function refreshTags() {
+  const tags = await window.go.main.App.GetTags();
+  fillTagFilter('#library-tag-filter', tags, 'driveCount', 'Alle Tags');
+  fillTagFilter('#drive-tag-filter', tags, 'driveCount', 'Alle Tags');
+  fillTagFilter('#compare-tag-filter', tags, 'snapshotCount', 'Alle Tags');
+  return tags;
+}
+
 async function loadDrives() {
-  const drives = await window.go.main.App.GetDrives();
+  const [drives] = await Promise.all([window.go.main.App.GetDrives(), refreshTags()]);
   await loadConnectedVolumes(drives);
   const list = $('#drive-list');
   list.replaceChildren();
-  $('#drives-empty').classList.toggle('hidden', drives.length !== 0);
+  const selectedTag = $('#drive-tag-filter').value.toLocaleLowerCase('de-DE');
+  const visibleDrives = selectedTag ? drives.filter((drive) => (drive.tags || []).some((tag) => tag.toLocaleLowerCase('de-DE') === selectedTag)) : drives;
+  $('#drives-empty').classList.toggle('hidden', visibleDrives.length !== 0);
+  $('#drives-empty').textContent = drives.length ? 'Keine Datenträger mit diesem Tag gefunden.' : 'Noch keine Datenträger katalogisiert.';
   const filter = $('#drive-filter');
   const compareDrive = $('#compare-drive');
   const selectedDrive = filter.value;
@@ -391,6 +410,7 @@ async function loadDrives() {
   for (const drive of drives) {
     filter.add(new Option(driveName(drive), String(drive.id)));
     compareDrive.add(new Option(driveName(drive), String(drive.id)));
+    if (!visibleDrives.includes(drive)) continue;
     const row = document.createElement('div');
     row.className = 'drive-row';
     const identity = document.createElement('div');
@@ -526,8 +546,10 @@ async function loadComparisonSnapshots() {
   select.replaceChildren(new Option('Archivstand auswählen', '0'));
   if (!driveID) return;
   const snapshots = await window.go.main.App.GetDriveSnapshots(driveID);
-  snapshots.forEach((snapshot) => select.add(new Option(`${snapshot.protected ? '🔒 ' : ''}${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien${snapshot.tags?.length ? ` · ${snapshot.tags.join(', ')}` : ''}`, String(snapshot.id))));
-  select.value = [...select.options].some((option) => option.value === selected) ? selected : (snapshots[0] ? String(snapshots[0].id) : '0');
+  const selectedTag = $('#compare-tag-filter').value.toLocaleLowerCase('de-DE');
+  const filtered = selectedTag ? snapshots.filter((snapshot) => (snapshot.tags || []).some((tag) => tag.toLocaleLowerCase('de-DE') === selectedTag)) : snapshots;
+  filtered.forEach((snapshot) => select.add(new Option(`${snapshot.protected ? '🔒 ' : ''}${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien${snapshot.tags?.length ? ` · ${snapshot.tags.join(', ')}` : ''}`, String(snapshot.id))));
+  select.value = [...select.options].some((option) => option.value === selected) ? selected : (filtered[0] ? String(filtered[0].id) : '0');
 }
 
 async function loadComparison(page = 1) {
@@ -657,7 +679,7 @@ async function loadSnapshots(driveID) {
         status.textContent = 'Gespeichert ✓'; remove.disabled = toggle.checked; row.classList.toggle('protected', toggle.checked);
         info.textContent = `${toggle.checked ? '🔒 ' : ''}${formatDate(snapshot.capturedAt)} · ${snapshot.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(snapshot.totalBytes)}`;
         snapshot.protected = toggle.checked; snapshot.note = note.value; snapshot.tags = parseTags(tags.value);
-        loadComparisonSnapshots().catch(() => {});
+        refreshTags().then(loadComparisonSnapshots).catch(() => {});
       } catch (error) { status.textContent = `Fehler: ${error}`; toggle.checked = snapshot.protected; }
       finally { save.disabled = false; toggle.disabled = false; }
     };
@@ -1000,6 +1022,8 @@ $('#search-button').addEventListener('click', () => loadLibrary(1));
 $('#search-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadLibrary(1); });
 $('#extension-filter').addEventListener('change', () => loadLibrary(1));
 $('#drive-filter').addEventListener('change', () => loadLibrary(1));
+$('#library-tag-filter').addEventListener('change', () => loadLibrary(1));
+$('#drive-tag-filter').addEventListener('change', loadDrives);
 $('#content-search').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
@@ -1012,6 +1036,7 @@ $('#archive-search').addEventListener('keydown', (event) => { if (event.key === 
 $('#archive-previous').addEventListener('click', () => loadArchiveFiles(archivePage - 1));
 $('#archive-next').addEventListener('click', () => loadArchiveFiles(archivePage + 1));
 $('#compare-drive').addEventListener('change', loadComparisonSnapshots);
+$('#compare-tag-filter').addEventListener('change', async () => { await loadComparisonSnapshots(); await loadComparison(1); });
 $('#compare-button').addEventListener('click', () => loadComparison(1));
 $('#compare-status').addEventListener('change', () => loadComparison(1));
 $('#compare-snapshot').addEventListener('change', () => loadComparison(1));

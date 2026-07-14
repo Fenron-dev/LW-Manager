@@ -79,6 +79,12 @@ type SearchResult struct {
 	Total      int64        `json:"total"`
 }
 
+type TagSummary struct {
+	Name          string `json:"name"`
+	DriveCount    int64  `json:"driveCount"`
+	SnapshotCount int64  `json:"snapshotCount"`
+}
+
 type HashCandidate struct {
 	ID, Size         int64
 	SourcePath, Hash string
@@ -215,7 +221,7 @@ func (c *Catalog) Stats() (files, drives int64, err error) {
 	return
 }
 
-func (c *Catalog) Search(query, extension string, driveID int64, includeContent bool, limit, offset int) (SearchResult, error) {
+func (c *Catalog) Search(query, extension, tag string, driveID int64, includeContent bool, limit, offset int) (SearchResult, error) {
 	if limit < 1 || limit > 100 {
 		limit = 50
 	}
@@ -225,8 +231,9 @@ func (c *Catalog) Search(query, extension string, driveID int64, includeContent 
 	query = strings.TrimSpace(query)
 	pattern := "%" + escapeLike(query) + "%"
 	extension = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(extension)), ".")
-	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\' OR (? <> '' AND ? = 1 AND LOWER(COALESCE(f.text_content,'')) LIKE LOWER(?) ESCAPE '\')) AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?)`
-	args := []any{pattern, pattern, query, includeContent, pattern, extension, extension, driveID, driveID}
+	tag = strings.TrimSpace(tag)
+	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\' OR (? <> '' AND ? = 1 AND LOWER(COALESCE(f.text_content,'')) LIKE LOWER(?) ESCAPE '\')) AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?) AND (? = '' OR EXISTS(SELECT 1 FROM drive_tags dt JOIN tags t ON t.id=dt.tag_id WHERE dt.drive_id=f.drive_id AND t.name=? COLLATE NOCASE))`
+	args := []any{pattern, pattern, query, includeContent, pattern, extension, extension, driveID, driveID, tag, tag}
 	result := SearchResult{Extensions: make([]string, 0)}
 	if err := c.db.QueryRow("SELECT COUNT(*) FROM files f WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
@@ -263,6 +270,26 @@ func (c *Catalog) Search(query, extension string, driveID int64, includeContent 
 		result.Extensions = append(result.Extensions, value)
 	}
 	return result, extensionRows.Err()
+}
+
+func (c *Catalog) Tags() ([]TagSummary, error) {
+	rows, err := c.readDB.Query(`SELECT t.name,
+		(SELECT COUNT(*) FROM drive_tags dt WHERE dt.tag_id=t.id),
+		(SELECT COUNT(*) FROM snapshot_tags st WHERE st.tag_id=t.id)
+		FROM tags t ORDER BY t.name COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]TagSummary, 0)
+	for rows.Next() {
+		var tag TagSummary
+		if err := rows.Scan(&tag.Name, &tag.DriveCount, &tag.SnapshotCount); err != nil {
+			return nil, err
+		}
+		result = append(result, tag)
+	}
+	return result, rows.Err()
 }
 
 func (c *Catalog) HashCandidates() ([]HashCandidate, error) {
