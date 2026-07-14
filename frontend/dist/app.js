@@ -134,7 +134,63 @@ async function showSettings() {
     $('#setting-pdf-limit').value = settings.pdfPreviewMB;
     $('#setting-video-limit').value = settings.videoPreviewMB;
     syncSettingsControls();
+    await loadTagManagement();
   } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
+}
+
+async function loadTagManagement() {
+  const container = $('#tag-management-list');
+  container.replaceChildren();
+  const tags = await refreshTags();
+  if (!tags.length) {
+    const empty = document.createElement('span');
+    empty.className = 'tag-management-empty';
+    empty.textContent = 'Noch keine Tags vergeben.';
+    container.append(empty);
+    return;
+  }
+  tags.forEach((tag) => {
+    const row = document.createElement('div');
+    row.className = 'tag-management-row';
+    const input = document.createElement('input');
+    input.value = tag.name;
+    input.maxLength = 50;
+    input.setAttribute('aria-label', `Tag ${tag.name}`);
+    const usage = document.createElement('span');
+    usage.textContent = `${tag.driveCount.toLocaleString('de-DE')} Datenträger · ${tag.snapshotCount.toLocaleString('de-DE')} Archivstände`;
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'secondary';
+    rename.textContent = 'Übernehmen';
+    rename.disabled = true;
+    input.addEventListener('input', () => { rename.disabled = !input.value.trim() || input.value.trim() === tag.name; });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'danger';
+    remove.textContent = 'Löschen';
+    rename.addEventListener('click', async () => {
+      const next = input.value.trim();
+      if (!next) return;
+      rename.disabled = true;
+      try {
+        await window.go.main.App.RenameTag(tag.name, next);
+        $('#tag-management-status').textContent = `„${tag.name}“ wurde in „${next}“ umbenannt oder zusammengeführt.`;
+        await loadTagManagement();
+      } catch (error) { $('#tag-management-status').textContent = `Fehler: ${error}`; rename.disabled = false; }
+    });
+    input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !rename.disabled) rename.click(); });
+    remove.addEventListener('click', async () => {
+      if (!confirm(`Tag „${tag.name}“ wirklich von allen Datenträgern und Archivständen entfernen?`)) return;
+      remove.disabled = true;
+      try {
+        await window.go.main.App.DeleteTag(tag.name);
+        $('#tag-management-status').textContent = `„${tag.name}“ wurde gelöscht.`;
+        await loadTagManagement();
+      } catch (error) { $('#tag-management-status').textContent = `Fehler: ${error}`; remove.disabled = false; }
+    });
+    row.append(input, usage, rename, remove);
+    container.append(row);
+  });
 }
 
 async function saveSettings() {

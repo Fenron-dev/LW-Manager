@@ -319,6 +319,69 @@ func (c *Catalog) Tags() ([]TagSummary, error) {
 	return result, rows.Err()
 }
 
+// RenameTag changes a tag globally. If the destination already exists, all
+// assignments are merged into it and the old tag is removed.
+func (c *Catalog) RenameTag(currentName, newName string) error {
+	currentName = strings.TrimSpace(currentName)
+	normalized, err := normalizeTags([]string{newName})
+	if err != nil {
+		return err
+	}
+	if currentName == "" || len(normalized) != 1 {
+		return fmt.Errorf("Tagname darf nicht leer sein")
+	}
+	tx, err := c.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var sourceID int64
+	if err := tx.QueryRow(`SELECT id FROM tags WHERE name=? COLLATE NOCASE`, currentName).Scan(&sourceID); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("Tag %q wurde nicht gefunden", currentName)
+		}
+		return err
+	}
+	var targetID int64
+	err = tx.QueryRow(`SELECT id FROM tags WHERE name=? COLLATE NOCASE`, normalized[0]).Scan(&targetID)
+	if err == sql.ErrNoRows {
+		_, err = tx.Exec(`UPDATE tags SET name=? WHERE id=?`, normalized[0], sourceID)
+	} else if err == nil && targetID == sourceID {
+		_, err = tx.Exec(`UPDATE tags SET name=? WHERE id=?`, normalized[0], sourceID)
+	} else if err == nil {
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO drive_tags(drive_id,tag_id) SELECT drive_id,? FROM drive_tags WHERE tag_id=?`, targetID, sourceID); err == nil {
+			_, err = tx.Exec(`INSERT OR IGNORE INTO snapshot_tags(snapshot_id,tag_id) SELECT snapshot_id,? FROM snapshot_tags WHERE tag_id=?`, targetID, sourceID)
+		}
+		if err == nil {
+			_, err = tx.Exec(`DELETE FROM tags WHERE id=?`, sourceID)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteTag removes a tag and all of its drive and snapshot assignments.
+func (c *Catalog) DeleteTag(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("Tagname darf nicht leer sein")
+	}
+	result, err := c.db.Exec(`DELETE FROM tags WHERE name=? COLLATE NOCASE`, name)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return fmt.Errorf("Tag %q wurde nicht gefunden", name)
+	}
+	return nil
+}
+
 func (c *Catalog) HashCandidates() ([]HashCandidate, error) {
 	rows, err := c.readDB.Query(`SELECT f.id,f.size,d.vault_path,f.path,COALESCE(f.content_hash,'')
 		FROM files f JOIN drives d ON d.id=f.drive_id

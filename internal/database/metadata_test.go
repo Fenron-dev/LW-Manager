@@ -63,6 +63,42 @@ func TestDriveMetadataAndTags(t *testing.T) {
 	}
 }
 
+func TestRenameMergeAndDeleteTags(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	for _, volume := range []string{"volume-a", "volume-b"} {
+		if err := catalog.ReplaceDriveScan(DriveScan{Path: t.TempDir(), Label: volume, UUID: volume}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drives, err := catalog.Drives()
+	if err != nil || len(drives) != 2 {
+		t.Fatalf("drives = %#v, %v", drives, err)
+	}
+	if err := catalog.UpdateDrive(drives[0].ID, "", "", "", "", "", "", []string{"Mobil", "Kunde"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.UpdateDrive(drives[1].ID, "", "", "", "", "", "", []string{"Archiv"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.RenameTag("mobil", "Unterwegs"); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.RenameTag("Unterwegs", "Archiv"); err != nil {
+		t.Fatal(err)
+	}
+	tags, err := catalog.Tags()
+	if err != nil || len(tags) != 2 || tags[0].Name != "Archiv" || tags[0].DriveCount != 2 {
+		t.Fatalf("merged tags = %#v, %v", tags, err)
+	}
+	if err := catalog.DeleteTag("ARCHIV"); err != nil {
+		t.Fatal(err)
+	}
+	tags, err = catalog.Tags()
+	if err != nil || len(tags) != 1 || tags[0].Name != "Kunde" {
+		t.Fatalf("remaining tags = %#v, %v", tags, err)
+	}
+}
+
 func TestProtectedSnapshotSurvivesCleanupAndDelete(t *testing.T) {
 	catalog := openMetadataTestCatalog(t)
 	root := t.TempDir()

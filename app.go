@@ -133,7 +133,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.29.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.30.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -168,6 +168,20 @@ func (a *App) GetTags() ([]database.TagSummary, error) {
 		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.Tags()
+}
+
+func (a *App) RenameTag(currentName, newName string) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.RenameTag(currentName, newName)
+}
+
+func (a *App) DeleteTag(name string) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.DeleteTag(name)
 }
 
 func (a *App) GetDrives() ([]database.Drive, error) {
