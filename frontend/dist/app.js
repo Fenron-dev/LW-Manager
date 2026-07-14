@@ -142,6 +142,7 @@ async function showSettings() {
     syncSettingsControls();
     await loadTagManagement();
     await loadScanDiagnostics();
+    await loadManagedBackups();
   } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
 }
 
@@ -343,12 +344,59 @@ async function createBackup() {
       $('#settings-status').textContent = 'Backup abgebrochen.';
     } else {
       $('#settings-status').textContent = `${result.message}: ${formatBytes(result.bytes)} · ${result.files.toLocaleString('de-DE')} Dateien`;
+      await loadManagedBackups();
     }
   } catch (error) {
     $('#settings-status').textContent = `Backup fehlgeschlagen: ${error}`;
   } finally {
     syncSettingsControls();
   }
+}
+
+function showBackupInspection(result) {
+  inspectedBackup = result;
+  $('#backup-inspection').textContent = `${formatDate(result.createdAt)} · ${result.catalogFiles.toLocaleString('de-DE')} Dateien · ${result.catalogDrives.toLocaleString('de-DE')} Datenträger · ${formatBytes(result.archiveBytes)}${result.includesThumbnails ? ' · mit Vorschaubildern' : ' · ohne Vorschaubilder'}`;
+  $('#backup-inspection').classList.remove('hidden');
+  $('#restore-backup-button').classList.remove('hidden');
+  syncSettingsControls();
+}
+
+async function loadManagedBackups() {
+  const container = $('#managed-backup-list');
+  container.replaceChildren();
+  const backups = await window.go.main.App.GetManagedBackups();
+  const total = backups.reduce((sum, item) => sum + item.size, 0);
+  $('#managed-backup-total').textContent = `${backups.length.toLocaleString('de-DE')} Sicherungen · ${formatBytes(total)}`;
+  if (!backups.length) {
+    const empty = document.createElement('span');
+    empty.className = 'tag-management-empty';
+    empty.textContent = 'Noch keine Sicherung direkt im Vault-Ordner.';
+    container.append(empty);
+    return;
+  }
+  backups.forEach((backup) => {
+    const row = document.createElement('div');
+    row.className = 'managed-backup-row';
+    const identity = document.createElement('div');
+    const name = document.createElement('strong'); name.textContent = backup.name; name.title = backup.path;
+    const meta = document.createElement('span'); meta.textContent = `${backup.kind} · ${new Date(backup.modified).toLocaleString('de-DE')} · ${formatBytes(backup.size)}`;
+    identity.append(name, meta);
+    const inspect = document.createElement('button'); inspect.type = 'button'; inspect.className = 'secondary'; inspect.textContent = 'Prüfen';
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'danger'; remove.textContent = 'Löschen';
+    inspect.addEventListener('click', async () => {
+      inspect.disabled = true; $('#settings-status').textContent = 'Datensicherung wird vollständig geprüft …';
+      try { const result = await window.go.main.App.InspectBackup(backup.path); showBackupInspection(result); $('#settings-status').textContent = 'Datensicherung ist gültig und kann wiederhergestellt werden.'; }
+      catch (error) { $('#settings-status').textContent = `Prüfung fehlgeschlagen: ${error}`; }
+      finally { inspect.disabled = false; }
+    });
+    remove.addEventListener('click', async () => {
+      if (!confirm(`${backup.kind} „${backup.name}“ wirklich dauerhaft löschen?`)) return;
+      remove.disabled = true;
+      try { await window.go.main.App.DeleteManagedBackup(backup.path); if (inspectedBackup?.path === backup.path) { inspectedBackup = null; $('#backup-inspection').classList.add('hidden'); $('#restore-backup-button').classList.add('hidden'); } await loadManagedBackups(); $('#settings-status').textContent = 'Sicherung gelöscht.'; }
+      catch (error) { $('#settings-status').textContent = `Löschen fehlgeschlagen: ${error}`; remove.disabled = false; }
+    });
+    row.append(identity, inspect, remove); container.append(row);
+  });
 }
 
 async function inspectBackup() {
@@ -359,9 +407,7 @@ async function inspectBackup() {
   try {
     const result = await window.go.main.App.SelectBackupForRestore();
     if (result.cancelled) { $('#settings-status').textContent = 'Prüfung abgebrochen.'; return; }
-    inspectedBackup = result;
-    $('#backup-inspection').textContent = `${formatDate(result.createdAt)} · ${result.catalogFiles.toLocaleString('de-DE')} Dateien · ${result.catalogDrives.toLocaleString('de-DE')} Datenträger · ${formatBytes(result.archiveBytes)}${result.includesThumbnails ? ' · mit Vorschaubildern' : ' · ohne Vorschaubilder'}`;
-    $('#backup-inspection').classList.remove('hidden'); $('#restore-backup-button').classList.remove('hidden');
+    showBackupInspection(result);
     $('#settings-status').textContent = 'Datensicherung ist gültig und kann wiederhergestellt werden.';
   } catch (error) { $('#settings-status').textContent = `Prüfung fehlgeschlagen: ${error}`; }
   finally { syncSettingsControls(); }

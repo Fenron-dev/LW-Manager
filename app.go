@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -96,6 +97,14 @@ type BackupInspection struct {
 	Message            string `json:"message"`
 }
 
+type ManagedBackup struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Kind     string `json:"kind"`
+	Size     int64  `json:"size"`
+	Modified string `json:"modified"`
+}
+
 type RestoreResult struct {
 	RollbackPath string `json:"rollbackPath"`
 	Files        int64  `json:"files"`
@@ -151,7 +160,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.31.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.32.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -457,9 +466,10 @@ func (a *App) CreateBackup() (BackupResult, error) {
 		return BackupResult{}, fmt.Errorf("Datensicherungen sind in den Einstellungen deaktiviert")
 	}
 	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
-		Title:           "VaultApp-Datensicherung speichern",
-		DefaultFilename: fmt.Sprintf("VaultApp-Backup-%s.zip", time.Now().Format("2006-01-02_15-04")),
-		Filters:         []wailsruntime.FileFilter{{DisplayName: "ZIP-Archiv", Pattern: "*.zip"}},
+		Title:            "VaultApp-Datensicherung speichern",
+		DefaultDirectory: a.root,
+		DefaultFilename:  fmt.Sprintf("VaultApp-Backup-%s.zip", time.Now().Format("2006-01-02_15-04")),
+		Filters:          []wailsruntime.FileFilter{{DisplayName: "ZIP-Archiv", Pattern: "*.zip"}},
 	})
 	if err != nil {
 		return BackupResult{}, err
@@ -479,6 +489,79 @@ func (a *App) CreateBackup() (BackupResult, error) {
 		return BackupResult{}, err
 	}
 	return BackupResult{Path: destination, Files: result.Files, Bytes: result.Bytes, Message: "Datensicherung erfolgreich erstellt"}, nil
+}
+
+func (a *App) GetManagedBackups() ([]ManagedBackup, error) {
+	entries, err := os.ReadDir(a.root)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ManagedBackup, 0)
+	for _, entry := range entries {
+		kind, ok := managedBackupKind(entry.Name())
+		if !ok || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		result = append(result, ManagedBackup{Name: entry.Name(), Path: filepath.Join(a.root, entry.Name()), Kind: kind, Size: info.Size(), Modified: info.ModTime().Format(time.RFC3339)})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Modified > result[j].Modified })
+	return result, nil
+}
+
+func managedBackupKind(name string) (string, bool) {
+	lower := strings.ToLower(name)
+	if !strings.HasSuffix(lower, ".zip") {
+		return "", false
+	}
+	switch {
+	case strings.HasPrefix(lower, "vaultapp-backup-"):
+		return "Backup", true
+	case strings.HasPrefix(lower, "vaultapp-rollback-"):
+		return "Rückfallsicherung", true
+	default:
+		return "", false
+	}
+}
+
+func (a *App) DeleteManagedBackup(path string) error {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	root, err := filepath.Abs(a.root)
+	if err != nil {
+		return err
+	}
+	if filepath.Dir(absolute) != root && !(goruntime.GOOS == "windows" && strings.EqualFold(filepath.Dir(absolute), root)) {
+		return fmt.Errorf("nur Sicherungen direkt im Vault-Ordner dürfen gelöscht werden")
+	}
+	if _, ok := managedBackupKind(filepath.Base(absolute)); !ok {
+		return fmt.Errorf("Datei ist keine verwaltete VaultApp-Sicherung")
+	}
+	info, err := os.Lstat(absolute)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("Sicherung ist keine reguläre Datei")
+	}
+	return os.Remove(absolute)
+}
+
+func (a *App) InspectBackup(source string) (BackupInspection, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return BackupInspection{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if !a.currentSettings().BackupEnabled {
+		return BackupInspection{}, fmt.Errorf("Datensicherungen sind in den Einstellungen deaktiviert")
+	}
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
+	return a.inspectBackup(source)
 }
 
 func backupLimits(settings appconfig.Settings) backup.Limits {
@@ -538,6 +621,10 @@ func (a *App) SelectBackupForRestore() (BackupInspection, error) {
 	}
 	a.scanMu.Lock()
 	defer a.scanMu.Unlock()
+	return a.inspectBackup(selected)
+}
+
+func (a *App) inspectBackup(selected string) (BackupInspection, error) {
 	staging, inspection, _, files, drives, err := a.prepareBackup(selected)
 	if staging != "" {
 		defer os.RemoveAll(staging)

@@ -34,6 +34,8 @@ Unter **Einstellungen → Datensicherung** lässt sich ein portables ZIP-Backup 
 
 Vor einer Wiederherstellung prüft VaultApp das ZIP vollständig: Format und Version, sichere relative Pfade, Größenlimits, ZIP-Prüfsummen, Konfiguration und SQLite-Integrität. Erst danach wird die Wiederherstellung freigegeben. Unmittelbar vor dem Austausch entsteht im portablen Vault eine datierte `VaultApp-Rollback-…zip`; schlägt der Austausch fehl, werden die bisherigen Dateien direkt zurückgesetzt. Enthält das gewählte Backup keine Vorschaubilder, bleibt der vorhandene Thumbnail-Cache unverändert.
 
+Sicherungen und Rückfallsicherungen, die direkt im Vault-Ordner liegen, erscheinen in der Backup-Verwaltung mit Typ, Datum, Größe und gemeinsamem Speicherverbrauch. Sie können dort geprüft, zur Wiederherstellung ausgewählt oder nach Rückfrage gelöscht werden. Löschvorgänge sind technisch auf eindeutig benannte VaultApp-ZIP-Dateien direkt im Vault-Ordner begrenzt; externe Sicherungen können weiterhin über den Dateidialog geprüft werden.
+
 Unter macOS muss `VaultApp.app` im heruntergeladenen Paket bleiben: Der portable Vault-Ordner ist der Ordner direkt neben dem App-Bundle. Die Anwendung darf nicht einzeln nach `/Applications` verschoben werden, wenn Daten weiterhin auf dem externen Medium liegen sollen.
 
 Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet relativ zu ihrem eigenen Ordner, entfernt das Quarantäne-Attribut von der danebenliegenden `VaultApp.app`, setzt das interne Programm auf ausführbar und startet die App. App und Starterdatei müssen daher im selben Ordner bleiben.
