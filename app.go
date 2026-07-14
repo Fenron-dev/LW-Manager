@@ -66,6 +66,25 @@ type BackupResult struct {
 	Message   string `json:"message"`
 }
 
+type BackupInspection struct {
+	Cancelled          bool   `json:"cancelled"`
+	Path               string `json:"path"`
+	CreatedAt          string `json:"createdAt"`
+	ArchiveFiles       int    `json:"archiveFiles"`
+	ArchiveBytes       int64  `json:"archiveBytes"`
+	CatalogFiles       int64  `json:"catalogFiles"`
+	CatalogDrives      int64  `json:"catalogDrives"`
+	IncludesThumbnails bool   `json:"includesThumbnails"`
+	Message            string `json:"message"`
+}
+
+type RestoreResult struct {
+	RollbackPath string `json:"rollbackPath"`
+	Files        int64  `json:"files"`
+	Drives       int64  `json:"drives"`
+	Message      string `json:"message"`
+}
+
 type DuplicateResult struct {
 	Groups  []database.DuplicateGroup `json:"groups"`
 	Hashed  int                       `json:"hashed"`
@@ -114,7 +133,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.28.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.29.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -321,32 +340,15 @@ func (a *App) CreateBackup() (BackupResult, error) {
 
 	a.scanMu.Lock()
 	defer a.scanMu.Unlock()
-	snapshot, err := os.CreateTemp("", "vaultapp-catalog-*.db")
+	limits := backupLimits(settings)
+	result, err := a.createBackupAt(destination, settings.BackupIncludeThumbnails, limits)
 	if err != nil {
 		return BackupResult{}, err
 	}
-	snapshotPath := snapshot.Name()
-	_ = snapshot.Close()
-	_ = os.Remove(snapshotPath)
-	defer os.Remove(snapshotPath)
-	if err := a.catalog.BackupTo(snapshotPath); err != nil {
-		return BackupResult{}, err
-	}
-	sources := []backup.Source{
-		{Path: snapshotPath, Name: "VaultApp-Backup/data/vault.db"},
-		{Path: a.configPath, Name: "VaultApp-Backup/data/config.json"},
-	}
-	if settings.BackupIncludeThumbnails {
-		thumbnailRoot, pathErr := vault.AssetPath(a.root, "thumbnails")
-		if pathErr != nil {
-			return BackupResult{}, pathErr
-		}
-		thumbnails, collectErr := backup.DirectorySources(thumbnailRoot, "VaultApp-Backup/assets/thumbnails")
-		if collectErr != nil {
-			return BackupResult{}, fmt.Errorf("Vorschaubilder sammeln: %w", collectErr)
-		}
-		sources = append(sources, thumbnails...)
-	}
+	return BackupResult{Path: destination, Files: result.Files, Bytes: result.Bytes, Message: "Datensicherung erfolgreich erstellt"}, nil
+}
+
+func backupLimits(settings appconfig.Settings) backup.Limits {
 	limits := backup.Limits{}
 	if !settings.BackupFileUnlimited {
 		limits.PerFileBytes = int64(settings.BackupFileMB) << 20
@@ -354,11 +356,203 @@ func (a *App) CreateBackup() (BackupResult, error) {
 	if !settings.BackupUnlimited {
 		limits.TotalBytes = int64(settings.BackupMaxMB) << 20
 	}
-	result, err := backup.Create(destination, sources, limits)
+	return limits
+}
+
+func (a *App) createBackupAt(destination string, includeThumbnails bool, limits backup.Limits) (backup.Result, error) {
+	snapshot, err := os.CreateTemp("", "vaultapp-catalog-*.db")
 	if err != nil {
-		return BackupResult{}, err
+		return backup.Result{}, err
 	}
-	return BackupResult{Path: destination, Files: result.Files, Bytes: result.Bytes, Message: "Datensicherung erfolgreich erstellt"}, nil
+	snapshotPath := snapshot.Name()
+	_ = snapshot.Close()
+	_ = os.Remove(snapshotPath)
+	defer os.Remove(snapshotPath)
+	if err := a.catalog.BackupTo(snapshotPath); err != nil {
+		return backup.Result{}, err
+	}
+	sources := []backup.Source{
+		{Path: snapshotPath, Name: "VaultApp-Backup/data/vault.db"},
+		{Path: a.configPath, Name: "VaultApp-Backup/data/config.json"},
+	}
+	if includeThumbnails {
+		thumbnailRoot, pathErr := vault.AssetPath(a.root, "thumbnails")
+		if pathErr != nil {
+			return backup.Result{}, pathErr
+		}
+		thumbnails, collectErr := backup.DirectorySources(thumbnailRoot, "VaultApp-Backup/assets/thumbnails")
+		if collectErr != nil {
+			return backup.Result{}, fmt.Errorf("Vorschaubilder sammeln: %w", collectErr)
+		}
+		sources = append(sources, thumbnails...)
+	}
+	return backup.Create(destination, sources, limits)
+}
+
+func (a *App) SelectBackupForRestore() (BackupInspection, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return BackupInspection{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if !a.currentSettings().BackupEnabled {
+		return BackupInspection{}, fmt.Errorf("Datensicherungen sind in den Einstellungen deaktiviert")
+	}
+	selected, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{Title: "VaultApp-Datensicherung prüfen", Filters: []wailsruntime.FileFilter{{DisplayName: "ZIP-Archiv", Pattern: "*.zip"}}})
+	if err != nil {
+		return BackupInspection{}, err
+	}
+	if selected == "" {
+		return BackupInspection{Cancelled: true, Message: "Prüfung abgebrochen"}, nil
+	}
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
+	staging, inspection, _, files, drives, err := a.prepareBackup(selected)
+	if staging != "" {
+		defer os.RemoveAll(staging)
+	}
+	if err != nil {
+		return BackupInspection{}, err
+	}
+	return BackupInspection{Path: selected, CreatedAt: inspection.Manifest.CreatedAt, ArchiveFiles: inspection.Files, ArchiveBytes: inspection.Bytes, CatalogFiles: files, CatalogDrives: drives, IncludesThumbnails: inspection.IncludesThumbnails, Message: "Datensicherung ist gültig"}, nil
+}
+
+func (a *App) prepareBackup(source string) (string, backup.Inspection, appconfig.Settings, int64, int64, error) {
+	staging, err := os.MkdirTemp(a.root, ".vaultapp-restore-*")
+	if err != nil {
+		return "", backup.Inspection{}, appconfig.Settings{}, 0, 0, err
+	}
+	inspection, err := backup.Extract(source, staging, backupLimits(a.currentSettings()))
+	if err != nil {
+		return staging, inspection, appconfig.Settings{}, 0, 0, err
+	}
+	settings, err := appconfig.Load(filepath.Join(staging, "data", "config.json"))
+	if err != nil {
+		return staging, inspection, settings, 0, 0, fmt.Errorf("Backup-Konfiguration prüfen: %w", err)
+	}
+	files, drives, err := database.Validate(filepath.Join(staging, "data", "vault.db"))
+	if err != nil {
+		return staging, inspection, settings, 0, 0, fmt.Errorf("Backup-Katalog prüfen: %w", err)
+	}
+	return staging, inspection, settings, files, drives, nil
+}
+
+type restoreSwap struct {
+	source, destination, previous string
+	hadPrevious                   bool
+}
+
+func applyRestoreSwaps(swaps []restoreSwap) (int, error) {
+	for index := range swaps {
+		swap := &swaps[index]
+		affected := index
+		if _, err := os.Stat(swap.destination); err == nil {
+			swap.hadPrevious = true
+			if err := os.Rename(swap.destination, swap.previous); err != nil {
+				return index, err
+			}
+			affected = index + 1
+		} else if !os.IsNotExist(err) {
+			return index, err
+		}
+		if err := os.MkdirAll(filepath.Dir(swap.destination), 0o755); err != nil {
+			return affected, err
+		}
+		if err := os.Rename(swap.source, swap.destination); err != nil {
+			return index + 1, err
+		}
+	}
+	return len(swaps), nil
+}
+
+func rollbackRestoreSwaps(swaps []restoreSwap, completed int) error {
+	if completed > len(swaps) {
+		completed = len(swaps)
+	}
+	var firstErr error
+	for index := completed - 1; index >= 0; index-- {
+		swap := swaps[index]
+		if err := os.RemoveAll(swap.destination); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		if swap.hadPrevious {
+			if err := os.Rename(swap.previous, swap.destination); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+func (a *App) reopenAfterFailedRestore(databasePath string, rollbackErr error) error {
+	if rollbackErr != nil {
+		a.initErr = fmt.Errorf("automatisches Zurücksetzen fehlgeschlagen: %w", rollbackErr)
+		return a.initErr
+	}
+	catalog, err := database.Open(databasePath)
+	if err != nil {
+		a.initErr = fmt.Errorf("bisherigen Katalog erneut öffnen: %w", err)
+		return a.initErr
+	}
+	a.catalog = catalog
+	return nil
+}
+
+func (a *App) RestoreBackup(source string) (RestoreResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return RestoreResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	settings := a.currentSettings()
+	if !settings.BackupEnabled {
+		return RestoreResult{}, fmt.Errorf("Datensicherungen sind in den Einstellungen deaktiviert")
+	}
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
+	staging, inspection, restoredSettings, files, drives, err := a.prepareBackup(source)
+	if staging != "" {
+		defer os.RemoveAll(staging)
+	}
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	rollbackPath := filepath.Join(a.root, fmt.Sprintf("VaultApp-Rollback-%s.zip", time.Now().Format("2006-01-02_15-04-05.000000000")))
+	if _, err := a.createBackupAt(rollbackPath, true, backupLimits(settings)); err != nil {
+		return RestoreResult{}, fmt.Errorf("Rückfallsicherung konnte nicht erstellt werden: %w", err)
+	}
+	databasePath, _ := vault.DataPath(a.root, "vault.db")
+	thumbnailPath, _ := vault.AssetPath(a.root, "thumbnails")
+	suffix := fmt.Sprintf(".restore-old-%d", time.Now().UnixNano())
+	swaps := []restoreSwap{
+		{source: filepath.Join(staging, "data", "vault.db"), destination: databasePath, previous: databasePath + suffix},
+		{source: filepath.Join(staging, "data", "config.json"), destination: a.configPath, previous: a.configPath + suffix},
+	}
+	if inspection.IncludesThumbnails {
+		swaps = append(swaps, restoreSwap{source: filepath.Join(staging, "assets", "thumbnails"), destination: thumbnailPath, previous: thumbnailPath + suffix})
+	}
+	_ = a.catalog.Close()
+	a.catalog = nil
+	completed, swapErr := applyRestoreSwaps(swaps)
+	if swapErr != nil {
+		rollbackErr := rollbackRestoreSwaps(swaps, completed)
+		if reopenErr := a.reopenAfterFailedRestore(databasePath, rollbackErr); reopenErr != nil {
+			return RestoreResult{}, fmt.Errorf("Wiederherstellung fehlgeschlagen; Rückfallsicherung liegt unter %s: %w", rollbackPath, reopenErr)
+		}
+		return RestoreResult{}, fmt.Errorf("Wiederherstellung austauschen: %w", swapErr)
+	}
+	restoredCatalog, openErr := database.Open(databasePath)
+	if openErr != nil {
+		rollbackErr := rollbackRestoreSwaps(swaps, len(swaps))
+		if reopenErr := a.reopenAfterFailedRestore(databasePath, rollbackErr); reopenErr != nil {
+			return RestoreResult{}, fmt.Errorf("Wiederherstellung fehlgeschlagen; Rückfallsicherung liegt unter %s: %w", rollbackPath, reopenErr)
+		}
+		return RestoreResult{}, fmt.Errorf("wiederhergestellten Katalog öffnen: %w", openErr)
+	}
+	a.catalog = restoredCatalog
+	a.settingsMu.Lock()
+	a.settings = restoredSettings
+	a.settingsMu.Unlock()
+	for _, swap := range swaps {
+		_ = os.RemoveAll(swap.previous)
+	}
+	return RestoreResult{RollbackPath: rollbackPath, Files: files, Drives: drives, Message: "Datensicherung erfolgreich wiederhergestellt"}, nil
 }
 
 func (a *App) currentSettings() appconfig.Settings {

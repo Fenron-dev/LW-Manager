@@ -28,13 +28,14 @@ Datenträger und einzelne Archivstände können jeweils eine Bemerkung und mehre
 
 Unter **Einstellungen → Datensicherung** lässt sich ein portables ZIP-Backup erstellen. Es enthält einen konsistenten SQLite-Schnappschuss, `config.json`, ein Formatmanifest und auf Wunsch den Thumbnail-Cache. Die Originaldateien der katalogisierten Datenträger und lokale Modelle werden nicht kopiert. Die Funktion ist abschaltbar; für die ZIP-Größe gilt ein konfigurierbares Gesamtlimit mit optionalem Unbegrenzt-Modus.
 
+Vor einer Wiederherstellung prüft VaultApp das ZIP vollständig: Format und Version, sichere relative Pfade, Größenlimits, ZIP-Prüfsummen, Konfiguration und SQLite-Integrität. Erst danach wird die Wiederherstellung freigegeben. Unmittelbar vor dem Austausch entsteht im portablen Vault eine datierte `VaultApp-Rollback-…zip`; schlägt der Austausch fehl, werden die bisherigen Dateien direkt zurückgesetzt. Enthält das gewählte Backup keine Vorschaubilder, bleibt der vorhandene Thumbnail-Cache unverändert.
+
 Unter macOS muss `VaultApp.app` im heruntergeladenen Paket bleiben: Der portable Vault-Ordner ist der Ordner direkt neben dem App-Bundle. Die Anwendung darf nicht einzeln nach `/Applications` verschoben werden, wenn Daten weiterhin auf dem externen Medium liegen sollen.
 
 Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet relativ zu ihrem eigenen Ordner, entfernt das Quarantäne-Attribut von der danebenliegenden `VaultApp.app`, setzt das interne Programm auf ausführbar und startet die App. App und Starterdatei müssen daher im selben Ordner bleiben.
 
 ## Roadmap
 
-- Wiederherstellung und Prüfung exportierter Backups
 - optionale lokale/entfernte KI-Anbieter
 
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.

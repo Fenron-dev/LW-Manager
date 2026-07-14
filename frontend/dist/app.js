@@ -13,6 +13,7 @@ let comparisonMode = 'list';
 let duplicateGroups = [];
 let duplicatePage = 1;
 const duplicatePageSize = 25;
+let inspectedBackup = null;
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -212,6 +213,38 @@ async function createBackup() {
   }
 }
 
+async function inspectBackup() {
+  const button = $('#inspect-backup-button'); button.disabled = true;
+  if (!await saveSettings()) { syncSettingsControls(); return; }
+  $('#settings-status').textContent = 'Datensicherung wird vollständig geprüft …';
+  inspectedBackup = null; $('#restore-backup-button').classList.add('hidden'); $('#backup-inspection').classList.add('hidden');
+  try {
+    const result = await window.go.main.App.SelectBackupForRestore();
+    if (result.cancelled) { $('#settings-status').textContent = 'Prüfung abgebrochen.'; return; }
+    inspectedBackup = result;
+    $('#backup-inspection').textContent = `${formatDate(result.createdAt)} · ${result.catalogFiles.toLocaleString('de-DE')} Dateien · ${result.catalogDrives.toLocaleString('de-DE')} Datenträger · ${formatBytes(result.archiveBytes)}${result.includesThumbnails ? ' · mit Vorschaubildern' : ' · ohne Vorschaubilder'}`;
+    $('#backup-inspection').classList.remove('hidden'); $('#restore-backup-button').classList.remove('hidden');
+    $('#settings-status').textContent = 'Datensicherung ist gültig und kann wiederhergestellt werden.';
+  } catch (error) { $('#settings-status').textContent = `Prüfung fehlgeschlagen: ${error}`; }
+  finally { syncSettingsControls(); }
+}
+
+async function restoreBackup() {
+  if (!inspectedBackup) return;
+  if (!confirm('Den aktuellen Katalog und die Einstellungen wirklich durch das geprüfte Backup ersetzen? Vorher wird automatisch eine Rückfallsicherung erstellt.')) return;
+  const button = $('#restore-backup-button'); button.disabled = true;
+  $('#settings-status').textContent = 'Rückfallsicherung wird erstellt und Backup wiederhergestellt …';
+  try {
+    const result = await window.go.main.App.RestoreBackup(inspectedBackup.path);
+    inspectedBackup = null;
+    await Promise.all([loadInfo(), loadDrives()]);
+    await showSettings();
+    $('#backup-inspection').classList.add('hidden'); $('#restore-backup-button').classList.add('hidden');
+    $('#settings-status').textContent = `${result.message}: ${result.files.toLocaleString('de-DE')} Dateien auf ${result.drives.toLocaleString('de-DE')} Datenträgern. Rückfallsicherung: ${result.rollbackPath}`;
+  } catch (error) { $('#settings-status').textContent = `Wiederherstellung fehlgeschlagen: ${error}`; }
+  finally { syncSettingsControls(); }
+}
+
 function syncSettingsControls() {
   const backupEnabled = $('#setting-backup-enabled').checked;
   $('#setting-backup-thumbnails').disabled = !backupEnabled;
@@ -220,6 +253,8 @@ function syncSettingsControls() {
   $('#setting-backup-unlimited').disabled = !backupEnabled;
   $('#setting-backup-limit').disabled = !backupEnabled || $('#setting-backup-unlimited').checked;
   $('#create-backup-button').disabled = !backupEnabled;
+  $('#inspect-backup-button').disabled = !backupEnabled;
+  $('#restore-backup-button').disabled = !backupEnabled || !inspectedBackup;
   const analysisEnabled = $('#setting-image-analysis-enabled').checked;
   ['#setting-image-jpeg', '#setting-image-png', '#setting-image-gif', '#setting-image-heic', '#setting-image-header-unlimited', '#setting-image-scan-unlimited'].forEach((selector) => { $(selector).disabled = !analysisEnabled; });
   $('#setting-image-header-limit').disabled = !analysisEnabled || $('#setting-image-header-unlimited').checked;
@@ -1009,6 +1044,8 @@ $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
 $('#create-backup-button').addEventListener('click', createBackup);
+$('#inspect-backup-button').addEventListener('click', inspectBackup);
+$('#restore-backup-button').addEventListener('click', restoreBackup);
 ['#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });

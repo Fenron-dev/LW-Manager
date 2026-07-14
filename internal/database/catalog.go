@@ -213,6 +213,33 @@ func (c *Catalog) BackupTo(destination string) error {
 	}
 	return nil
 }
+
+// Validate checks a restored catalog without modifying or migrating it.
+func Validate(path string) (files, drives int64, err error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err = db.Exec("PRAGMA query_only=ON; PRAGMA busy_timeout=5000"); err != nil {
+		return 0, 0, err
+	}
+	var integrity string
+	if err = db.QueryRow("PRAGMA integrity_check").Scan(&integrity); err != nil {
+		return 0, 0, err
+	}
+	if integrity != "ok" {
+		return 0, 0, fmt.Errorf("SQLite-Integritätsprüfung: %s", integrity)
+	}
+	if err = db.QueryRow("SELECT COUNT(*) FROM files").Scan(&files); err != nil {
+		return 0, 0, fmt.Errorf("Dateikatalog prüfen: %w", err)
+	}
+	if err = db.QueryRow("SELECT COUNT(*) FROM drives").Scan(&drives); err != nil {
+		return 0, 0, fmt.Errorf("Datenträgerkatalog prüfen: %w", err)
+	}
+	return files, drives, nil
+}
 func (c *Catalog) Stats() (files, drives int64, err error) {
 	if err = c.db.QueryRow("SELECT COUNT(*) FROM files").Scan(&files); err != nil {
 		return
