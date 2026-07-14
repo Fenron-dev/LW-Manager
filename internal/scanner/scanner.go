@@ -26,9 +26,17 @@ type File struct {
 }
 
 type Report struct {
-	Files   []File
-	Bytes   int64
-	Skipped int
+	Files           []File
+	Bytes           int64
+	Skipped         int
+	Issues          []Issue
+	IssuesTruncated bool
+}
+
+type Issue struct {
+	Path      string `json:"path"`
+	Operation string `json:"operation"`
+	Message   string `json:"message"`
 }
 
 type ImageAnalysisOptions struct {
@@ -68,7 +76,19 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 		return Report{}, err
 	}
 	excluded, _ := filepath.Abs(excludedRoot)
-	report := Report{Files: make([]File, 0, 1024)}
+	report := Report{Files: make([]File, 0, 1024), Issues: make([]Issue, 0)}
+	addIssue := func(path, operation string, issue error) {
+		report.Skipped++
+		if len(report.Issues) >= 500 {
+			report.IssuesTruncated = true
+			return
+		}
+		relative := path
+		if value, relErr := filepath.Rel(root, path); relErr == nil {
+			relative = value
+		}
+		report.Issues = append(report.Issues, Issue{Path: filepath.ToSlash(relative), Operation: operation, Message: issue.Error()})
+	}
 	var imageBytesRead int64
 	var exifBytesRead int64
 	var textBytesRead int64
@@ -77,7 +97,10 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 			return err
 		}
 		if walkErr != nil {
-			report.Skipped++
+			if path == root {
+				return walkErr
+			}
+			addIssue(path, "Verzeichnis lesen", walkErr)
 			if entry != nil && entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -94,12 +117,12 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 		}
 		info, err := entry.Info()
 		if err != nil {
-			report.Skipped++
+			addIssue(path, "Dateiinformationen lesen", err)
 			return nil
 		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
-			report.Skipped++
+			addIssue(path, "Relativen Pfad bestimmen", err)
 			return nil
 		}
 		extension := strings.ToLower(filepath.Ext(entry.Name()))

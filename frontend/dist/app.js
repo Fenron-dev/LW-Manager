@@ -14,6 +14,7 @@ let duplicateGroups = [];
 let duplicatePage = 1;
 const duplicatePageSize = 25;
 let inspectedBackup = null;
+let currentScanDiagnostic = null;
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -103,6 +104,11 @@ async function showSettings() {
     $('#setting-backup-unlimited').checked = settings.backupUnlimited;
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
+    $('#setting-scan-diagnostics-enabled').checked = settings.scanDiagnosticsEnabled;
+    $('#setting-scan-diagnostic-file-limit').value = settings.scanDiagnosticFileMB;
+    $('#setting-scan-diagnostic-file-unlimited').checked = settings.scanDiagnosticUnlimited;
+    $('#setting-scan-diagnostics-total-limit').value = settings.scanDiagnosticsTotalMB;
+    $('#setting-scan-diagnostics-unlimited').checked = settings.scanDiagnosticsUnlimited;
     $('#setting-image-analysis-enabled').checked = settings.imageAnalysisEnabled;
     $('#setting-image-jpeg').checked = settings.imageJPEGEnabled;
     $('#setting-image-png').checked = settings.imagePNGEnabled;
@@ -135,7 +141,78 @@ async function showSettings() {
     $('#setting-video-limit').value = settings.videoPreviewMB;
     syncSettingsControls();
     await loadTagManagement();
+    await loadScanDiagnostics();
   } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
+}
+
+function renderScanDiagnostic(diagnostic) {
+  const summary = $('#scan-report-summary');
+  const issues = $('#scan-report-issues');
+  summary.replaceChildren();
+  issues.replaceChildren();
+  const title = document.createElement('strong');
+  title.textContent = diagnostic.error ? 'Scan fehlgeschlagen' : `${Number(diagnostic.files || 0).toLocaleString('de-DE')} Dateien katalogisiert`;
+  const meta = document.createElement('span');
+  const duration = diagnostic.durationMs ? ` · ${(diagnostic.durationMs / 1000).toFixed(1)} s` : '';
+  meta.textContent = `${formatBytes(diagnostic.bytes || 0)} · ${Number(diagnostic.skipped || 0).toLocaleString('de-DE')} übersprungen${duration}`;
+  const path = document.createElement('code');
+  path.textContent = diagnostic.drive || '–';
+  summary.append(title, meta, path);
+  if (diagnostic.error) {
+    const error = document.createElement('p');
+    error.className = 'scan-issue error';
+    error.textContent = diagnostic.error;
+    issues.append(error);
+  }
+  (diagnostic.issues || []).forEach((issue) => {
+    const row = document.createElement('div');
+    row.className = 'scan-issue';
+    const issuePath = document.createElement('strong');
+    issuePath.textContent = issue.path || 'Unbekannter Pfad';
+    const message = document.createElement('span');
+    message.textContent = `${issue.operation}: ${issue.message}`;
+    row.append(issuePath, message);
+    issues.append(row);
+  });
+  if (diagnostic.issuesTruncated) {
+    const truncated = document.createElement('p');
+    truncated.className = 'scan-report-note';
+    truncated.textContent = 'Die Anzeige ist auf 500 Einträge begrenzt; die Gesamtzahl steht in der Zusammenfassung.';
+    issues.append(truncated);
+  }
+  if (!diagnostic.error && !(diagnostic.issues || []).length) {
+    const clean = document.createElement('p');
+    clean.className = 'scan-report-note success';
+    clean.textContent = 'Keine Leseprobleme erkannt.';
+    issues.append(clean);
+  }
+  $('#scan-report-dialog').showModal();
+}
+
+async function loadScanDiagnostics() {
+  const container = $('#scan-diagnostics-list');
+  container.replaceChildren();
+  const diagnostics = await window.go.main.App.GetScanDiagnostics();
+  if (!diagnostics.length) {
+    const empty = document.createElement('span');
+    empty.className = 'tag-management-empty';
+    empty.textContent = 'Noch keine Scan-Berichte vorhanden.';
+    container.append(empty);
+    return;
+  }
+  diagnostics.forEach((diagnostic) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `scan-diagnostic-row${diagnostic.error ? ' error' : ''}`;
+    const label = document.createElement('strong');
+    const timestamp = diagnostic.finishedAt ? new Date(diagnostic.finishedAt).toLocaleString('de-DE') : 'Unbekannter Zeitpunkt';
+    label.textContent = `${timestamp} · ${diagnostic.error ? 'Fehlgeschlagen' : `${Number(diagnostic.files).toLocaleString('de-DE')} Dateien`}`;
+    const detail = document.createElement('span');
+    detail.textContent = `${diagnostic.drive} · ${Number(diagnostic.skipped).toLocaleString('de-DE')} übersprungen`;
+    button.append(label, detail);
+    button.addEventListener('click', () => renderScanDiagnostic(diagnostic));
+    container.append(button);
+  });
 }
 
 async function loadTagManagement() {
@@ -199,7 +276,7 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 7,
+      version: 8,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       backupEnabled: $('#setting-backup-enabled').checked,
       backupIncludeThumbnails: $('#setting-backup-thumbnails').checked,
@@ -209,6 +286,11 @@ async function saveSettings() {
       backupUnlimited: $('#setting-backup-unlimited').checked,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
+      scanDiagnosticsEnabled: $('#setting-scan-diagnostics-enabled').checked,
+      scanDiagnosticFileMB: Number($('#setting-scan-diagnostic-file-limit').value),
+      scanDiagnosticUnlimited: $('#setting-scan-diagnostic-file-unlimited').checked,
+      scanDiagnosticsTotalMB: Number($('#setting-scan-diagnostics-total-limit').value),
+      scanDiagnosticsUnlimited: $('#setting-scan-diagnostics-unlimited').checked,
       imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked,
       imageJPEGEnabled: $('#setting-image-jpeg').checked,
       imagePNGEnabled: $('#setting-image-png').checked,
@@ -311,6 +393,11 @@ function syncSettingsControls() {
   $('#create-backup-button').disabled = !backupEnabled;
   $('#inspect-backup-button').disabled = !backupEnabled;
   $('#restore-backup-button').disabled = !backupEnabled || !inspectedBackup;
+  const diagnosticsEnabled = $('#setting-scan-diagnostics-enabled').checked;
+  $('#setting-scan-diagnostic-file-unlimited').disabled = !diagnosticsEnabled;
+  $('#setting-scan-diagnostic-file-limit').disabled = !diagnosticsEnabled || $('#setting-scan-diagnostic-file-unlimited').checked;
+  $('#setting-scan-diagnostics-unlimited').disabled = !diagnosticsEnabled;
+  $('#setting-scan-diagnostics-total-limit').disabled = !diagnosticsEnabled || $('#setting-scan-diagnostics-unlimited').checked;
   const analysisEnabled = $('#setting-image-analysis-enabled').checked;
   ['#setting-image-jpeg', '#setting-image-png', '#setting-image-gif', '#setting-image-heic', '#setting-image-header-unlimited', '#setting-image-scan-unlimited'].forEach((selector) => { $(selector).disabled = !analysisEnabled; });
   $('#setting-image-header-limit').disabled = !analysisEnabled || $('#setting-image-header-unlimited').checked;
@@ -363,6 +450,8 @@ async function runScan(scanAction, preparingMessage) {
     if (!result.cancelled) {
       $('#scan-title').textContent = `${result.files.toLocaleString('de-DE')} Dateien katalogisiert`;
       $('#scan-detail').textContent = `${formatBytes(result.bytes)} erfasst · ${result.skipped} Einträge übersprungen`;
+      currentScanDiagnostic = result;
+      $('#scan-report-button').classList.toggle('hidden', !result.logPath && !result.issues?.length);
       extensionsLoaded = false;
       await Promise.all([loadInfo(), loadDrives()]);
     }
@@ -1099,10 +1188,11 @@ $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
+$('#scan-report-button').addEventListener('click', () => { if (currentScanDiagnostic) renderScanDiagnostic(currentScanDiagnostic); });
 $('#create-backup-button').addEventListener('click', createBackup);
 $('#inspect-backup-button').addEventListener('click', inspectBackup);
 $('#restore-backup-button').addEventListener('click', restoreBackup);
-['#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+['#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#drive-scan-button').addEventListener('click', startScan);

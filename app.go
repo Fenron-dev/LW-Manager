@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -45,12 +46,29 @@ type AppInfo struct {
 }
 
 type ScanResult struct {
-	Cancelled bool   `json:"cancelled"`
-	Drive     string `json:"drive"`
-	Files     int    `json:"files"`
-	Bytes     int64  `json:"bytes"`
-	Skipped   int    `json:"skipped"`
-	Message   string `json:"message"`
+	Cancelled       bool            `json:"cancelled"`
+	Drive           string          `json:"drive"`
+	Files           int             `json:"files"`
+	Bytes           int64           `json:"bytes"`
+	Skipped         int             `json:"skipped"`
+	Issues          []scanner.Issue `json:"issues"`
+	IssuesTruncated bool            `json:"issuesTruncated"`
+	LogPath         string          `json:"logPath"`
+	Message         string          `json:"message"`
+}
+
+type ScanDiagnostic struct {
+	StartedAt       time.Time       `json:"startedAt"`
+	FinishedAt      time.Time       `json:"finishedAt"`
+	DurationMS      int64           `json:"durationMs"`
+	Drive           string          `json:"drive"`
+	Files           int             `json:"files"`
+	Bytes           int64           `json:"bytes"`
+	Skipped         int             `json:"skipped"`
+	Issues          []scanner.Issue `json:"issues"`
+	IssuesTruncated bool            `json:"issuesTruncated"`
+	Error           string          `json:"error,omitempty"`
+	LogPath         string          `json:"logPath"`
 }
 
 type ConnectedVolumes struct {
@@ -133,7 +151,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.30.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.31.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -168,6 +186,104 @@ func (a *App) GetTags() ([]database.TagSummary, error) {
 		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.Tags()
+}
+
+func (a *App) GetScanDiagnostics() ([]ScanDiagnostic, error) {
+	logs, err := vault.DataPath(a.root, "logs")
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(logs)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ScanDiagnostic, 0, 20)
+	for index := len(entries) - 1; index >= 0 && len(result) < 20; index-- {
+		entry := entries[index]
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "scan-") || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(logs, entry.Name()))
+		if readErr != nil {
+			continue
+		}
+		var diagnostic ScanDiagnostic
+		if json.Unmarshal(data, &diagnostic) == nil {
+			result = append(result, diagnostic)
+		}
+	}
+	return result, nil
+}
+
+func (a *App) writeScanDiagnostic(diagnostic ScanDiagnostic) string {
+	settings := a.currentSettings()
+	if !settings.ScanDiagnosticsEnabled {
+		return ""
+	}
+	finished := time.Now()
+	diagnostic.FinishedAt = finished
+	diagnostic.DurationMS = finished.Sub(diagnostic.StartedAt).Milliseconds()
+	filename := "scan-" + finished.UTC().Format("20060102T150405.000000000Z") + ".json"
+	path, err := vault.DataPath(a.root, filepath.Join("logs", filename))
+	if err != nil {
+		return ""
+	}
+	diagnostic.LogPath = filepath.ToSlash(filepath.Join("data", "logs", filename))
+	data, err := json.MarshalIndent(diagnostic, "", "  ")
+	if !settings.ScanDiagnosticUnlimited {
+		limit := int64(settings.ScanDiagnosticFileMB) << 20
+		for err == nil && int64(len(data)) > limit && len(diagnostic.Issues) > 0 {
+			diagnostic.IssuesTruncated = true
+			diagnostic.Issues = diagnostic.Issues[:len(diagnostic.Issues)-1]
+			data, err = json.MarshalIndent(diagnostic, "", "  ")
+		}
+	}
+	if err != nil || os.WriteFile(path, data, 0o644) != nil {
+		return ""
+	}
+	if !settings.ScanDiagnosticsUnlimited {
+		a.trimScanDiagnostics(int64(settings.ScanDiagnosticsTotalMB) << 20)
+		if _, err := os.Stat(path); err != nil {
+			return ""
+		}
+	}
+	return diagnostic.LogPath
+}
+
+func (a *App) trimScanDiagnostics(limit int64) {
+	logs, err := vault.DataPath(a.root, "logs")
+	if err != nil {
+		return
+	}
+	entries, err := os.ReadDir(logs)
+	if err != nil {
+		return
+	}
+	total := int64(0)
+	type logFile struct {
+		path string
+		size int64
+	}
+	files := make([]logFile, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "scan-") || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			continue
+		}
+		files = append(files, logFile{path: filepath.Join(logs, entry.Name()), size: info.Size()})
+		total += info.Size()
+	}
+	for _, file := range files {
+		if total <= limit {
+			break
+		}
+		if os.Remove(file.path) == nil {
+			total -= file.size
+		}
+	}
 }
 
 func (a *App) RenameTag(currentName, newName string) error {
@@ -326,6 +442,9 @@ func (a *App) SaveSettings(settings appconfig.Settings) error {
 	a.settingsMu.Lock()
 	a.settings = settings
 	a.settingsMu.Unlock()
+	if settings.ScanDiagnosticsEnabled && !settings.ScanDiagnosticsUnlimited {
+		a.trimScanDiagnostics(int64(settings.ScanDiagnosticsTotalMB) << 20)
+	}
 	return nil
 }
 
@@ -659,9 +778,9 @@ func (a *App) ScanVolume(path string) (ScanResult, error) {
 }
 
 func (a *App) scanPath(selected string) (ScanResult, error) {
-
 	a.scanMu.Lock()
 	defer a.scanMu.Unlock()
+	started := time.Now()
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": 0, "path": selected})
 	settings := a.currentSettings()
 	report, err := scanner.Scan(a.ctx, selected, a.root, scanner.ImageAnalysisOptions{
@@ -681,6 +800,7 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 		}
 	})
 	if err != nil {
+		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
 	}
 	totalSize, usedSize, _ := storage.Usage(selected)
@@ -691,9 +811,12 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 	}
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected})
 	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Vendor: identity.Vendor, Model: identity.Model, Serial: identity.Serial, DeviceType: identity.DeviceType, Archive: settings.ArchiveEnabled, MaxSnapshots: settings.MaxSnapshots}); err != nil {
+		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
 	}
-	result := ScanResult{Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Message: "Scan erfolgreich gespeichert"}
+	diagnostic := ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated}
+	result := ScanResult{Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}
+	result.LogPath = a.writeScanDiagnostic(diagnostic)
 	wailsruntime.EventsEmit(a.ctx, "scan:complete", result)
 	return result, nil
 }

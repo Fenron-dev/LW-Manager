@@ -15,6 +15,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.VolumeDetectionEnabled || !settings.BackupEnabled || settings.BackupFileMB != 1024 || settings.BackupMaxMB != 2048 || !settings.ArchiveEnabled || settings.MaxSnapshots != 10 {
 		t.Fatalf("unexpected defaults: %+v", settings)
 	}
+	if !settings.ScanDiagnosticsEnabled || settings.ScanDiagnosticFileMB != 2 || settings.ScanDiagnosticsTotalMB != 50 {
+		t.Fatalf("unexpected scan diagnostic defaults: %+v", settings)
+	}
 	if !settings.ImageAnalysisEnabled || !settings.ImageJPEGEnabled || !settings.ImagePNGEnabled || !settings.ImageGIFEnabled || !settings.ImageHEICEnabled || settings.ImageHeaderMB != 4 {
 		t.Fatalf("unexpected image analysis defaults: %+v", settings)
 	}

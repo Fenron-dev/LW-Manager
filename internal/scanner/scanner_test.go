@@ -38,6 +38,14 @@ func TestScanCollectsMetadataAndSkipsVault(t *testing.T) {
 	}
 }
 
+func TestScanRejectsMissingRootInsteadOfReturningEmptySuccess(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "nicht-mehr-angeschlossen")
+	report, err := Scan(context.Background(), root, "", ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{}, nil)
+	if err == nil {
+		t.Fatalf("missing root returned success with %#v", report)
+	}
+}
+
 func TestScanCollectsOptionalEXIFMetadata(t *testing.T) {
 	root := t.TempDir()
 	tiff := make([]byte, 48)

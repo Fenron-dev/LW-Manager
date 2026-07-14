@@ -18,6 +18,11 @@ type Settings struct {
 	BackupUnlimited          bool `json:"backupUnlimited"`
 	ArchiveEnabled           bool `json:"archiveEnabled"`
 	MaxSnapshots             int  `json:"maxSnapshots"`
+	ScanDiagnosticsEnabled   bool `json:"scanDiagnosticsEnabled"`
+	ScanDiagnosticFileMB     int  `json:"scanDiagnosticFileMB"`
+	ScanDiagnosticUnlimited  bool `json:"scanDiagnosticUnlimited"`
+	ScanDiagnosticsTotalMB   int  `json:"scanDiagnosticsTotalMB"`
+	ScanDiagnosticsUnlimited bool `json:"scanDiagnosticsUnlimited"`
 	ImageAnalysisEnabled     bool `json:"imageAnalysisEnabled"`
 	ImageJPEGEnabled         bool `json:"imageJPEGEnabled"`
 	ImagePNGEnabled          bool `json:"imagePNGEnabled"`
@@ -52,7 +57,8 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 7, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 8, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
 		EXIFFileMB: 8, EXIFTotalMB: 256, EXIFTotalUnlimited: true,
@@ -84,7 +90,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 7
+	settings.Version = 8
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -106,6 +112,12 @@ func Save(path string, settings Settings) error {
 func (settings Settings) Validate() error {
 	if settings.MaxSnapshots < 0 || settings.MaxSnapshots > 100 {
 		return fmt.Errorf("maximale Archivstände müssen zwischen 0 und 100 liegen")
+	}
+	if settings.ScanDiagnosticFileMB < 1 || settings.ScanDiagnosticFileMB > 1024 {
+		return fmt.Errorf("Diagnose-Dateilimit muss zwischen 1 und 1024 MB liegen")
+	}
+	if settings.ScanDiagnosticsTotalMB < 1 || settings.ScanDiagnosticsTotalMB > 1_000_000 {
+		return fmt.Errorf("Diagnose-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.BackupMaxMB < 1 || settings.BackupMaxMB > 1_000_000 {
 		return fmt.Errorf("Backup-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
