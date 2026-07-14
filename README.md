@@ -36,12 +36,15 @@ Vor einer Wiederherstellung prüft VaultApp das ZIP vollständig: Format und Ver
 
 Sicherungen und Rückfallsicherungen, die direkt im Vault-Ordner liegen, erscheinen in der Backup-Verwaltung mit Typ, Datum, Größe und gemeinsamem Speicherverbrauch. Sie können dort geprüft, zur Wiederherstellung ausgewählt oder nach Rückfrage gelöscht werden. Löschvorgänge sind technisch auf eindeutig benannte VaultApp-ZIP-Dateien direkt im Vault-Ordner begrenzt; externe Sicherungen können weiterhin über den Dateidialog geprüft werden.
 
+Unter **Einstellungen → KI-Anbieter** kann die optionale KI-Grundlage vollständig deaktiviert oder für ein lokales Ollama beziehungsweise den entfernten Dienst OpenRouter konfiguriert werden. Endpunkt, Modell, Zeitlimit sowie Datenbudgets pro Datei und insgesamt sind einstellbar; beide Budgets besitzen einen Unbegrenzt-Schalter. Der Verbindungstest liest ausschließlich die Modellliste und startet keine Analyse. OpenRouter-Schlüssel werden getrennt unter `data/secrets/ai-provider.key` gespeichert und bewusst nicht in VaultApp-Backups aufgenommen. Auf einem unverschlüsselten portablen Medium bleibt diese Datei dennoch lokal lesbar.
+
 Unter macOS muss `VaultApp.app` im heruntergeladenen Paket bleiben: Der portable Vault-Ordner ist der Ordner direkt neben dem App-Bundle. Die Anwendung darf nicht einzeln nach `/Applications` verschoben werden, wenn Daten weiterhin auf dem externen Medium liegen sollen.
 
 Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet relativ zu ihrem eigenen Ordner, entfernt das Quarantäne-Attribut von der danebenliegenden `VaultApp.app`, setzt das interne Programm auf ausführbar und startet die App. App und Starterdatei müssen daher im selben Ordner bleiben.
 
 ## Roadmap
 
-- optionale lokale/entfernte KI-Anbieter
+- KI-Tagging und Zusammenfassungen über den konfigurierten Anbieter
+- optionale Bildanalyse über Vision-Modelle
 
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.

@@ -8,56 +8,65 @@ import (
 )
 
 type Settings struct {
-	Version                  int  `json:"version"`
-	VolumeDetectionEnabled   bool `json:"volumeDetectionEnabled"`
-	BackupEnabled            bool `json:"backupEnabled"`
-	BackupIncludeThumbnails  bool `json:"backupIncludeThumbnails"`
-	BackupFileMB             int  `json:"backupFileMB"`
-	BackupFileUnlimited      bool `json:"backupFileUnlimited"`
-	BackupMaxMB              int  `json:"backupMaxMB"`
-	BackupUnlimited          bool `json:"backupUnlimited"`
-	ArchiveEnabled           bool `json:"archiveEnabled"`
-	MaxSnapshots             int  `json:"maxSnapshots"`
-	ScanDiagnosticsEnabled   bool `json:"scanDiagnosticsEnabled"`
-	ScanDiagnosticFileMB     int  `json:"scanDiagnosticFileMB"`
-	ScanDiagnosticUnlimited  bool `json:"scanDiagnosticUnlimited"`
-	ScanDiagnosticsTotalMB   int  `json:"scanDiagnosticsTotalMB"`
-	ScanDiagnosticsUnlimited bool `json:"scanDiagnosticsUnlimited"`
-	ImageAnalysisEnabled     bool `json:"imageAnalysisEnabled"`
-	ImageJPEGEnabled         bool `json:"imageJPEGEnabled"`
-	ImagePNGEnabled          bool `json:"imagePNGEnabled"`
-	ImageGIFEnabled          bool `json:"imageGIFEnabled"`
-	ImageHEICEnabled         bool `json:"imageHEICEnabled"`
-	ImageHeaderMB            int  `json:"imageHeaderMB"`
-	ImageHeaderUnlimited     bool `json:"imageHeaderUnlimited"`
-	ImageScanBudgetMB        int  `json:"imageScanBudgetMB"`
-	ImageScanBudgetUnlimited bool `json:"imageScanBudgetUnlimited"`
-	EXIFEnabled              bool `json:"exifEnabled"`
-	EXIFFileMB               int  `json:"exifFileMB"`
-	EXIFFileUnlimited        bool `json:"exifFileUnlimited"`
-	EXIFTotalMB              int  `json:"exifTotalMB"`
-	EXIFTotalUnlimited       bool `json:"exifTotalUnlimited"`
-	TextIndexEnabled         bool `json:"textIndexEnabled"`
-	TextDocumentsEnabled     bool `json:"textDocumentsEnabled"`
-	TextDataEnabled          bool `json:"textDataEnabled"`
-	TextSourceEnabled        bool `json:"textSourceEnabled"`
-	TextFileMB               int  `json:"textFileMB"`
-	TextFileUnlimited        bool `json:"textFileUnlimited"`
-	TextTotalMB              int  `json:"textTotalMB"`
-	TextTotalUnlimited       bool `json:"textTotalUnlimited"`
-	ImagePreviewEnabled      bool `json:"imagePreviewEnabled"`
-	HEICPreviewEnabled       bool `json:"heicPreviewEnabled"`
-	ImagePreviewMB           int  `json:"imagePreviewMB"`
-	ImagePreviewUnlimited    bool `json:"imagePreviewUnlimited"`
-	ThumbnailCacheMB         int  `json:"thumbnailCacheMB"`
-	ThumbnailCacheUnlimited  bool `json:"thumbnailCacheUnlimited"`
-	PDFPreviewMB             int  `json:"pdfPreviewMB"`
-	VideoPreviewMB           int  `json:"videoPreviewMB"`
+	Version                  int    `json:"version"`
+	VolumeDetectionEnabled   bool   `json:"volumeDetectionEnabled"`
+	BackupEnabled            bool   `json:"backupEnabled"`
+	BackupIncludeThumbnails  bool   `json:"backupIncludeThumbnails"`
+	BackupFileMB             int    `json:"backupFileMB"`
+	BackupFileUnlimited      bool   `json:"backupFileUnlimited"`
+	BackupMaxMB              int    `json:"backupMaxMB"`
+	BackupUnlimited          bool   `json:"backupUnlimited"`
+	ArchiveEnabled           bool   `json:"archiveEnabled"`
+	MaxSnapshots             int    `json:"maxSnapshots"`
+	ScanDiagnosticsEnabled   bool   `json:"scanDiagnosticsEnabled"`
+	ScanDiagnosticFileMB     int    `json:"scanDiagnosticFileMB"`
+	ScanDiagnosticUnlimited  bool   `json:"scanDiagnosticUnlimited"`
+	ScanDiagnosticsTotalMB   int    `json:"scanDiagnosticsTotalMB"`
+	ScanDiagnosticsUnlimited bool   `json:"scanDiagnosticsUnlimited"`
+	ImageAnalysisEnabled     bool   `json:"imageAnalysisEnabled"`
+	ImageJPEGEnabled         bool   `json:"imageJPEGEnabled"`
+	ImagePNGEnabled          bool   `json:"imagePNGEnabled"`
+	ImageGIFEnabled          bool   `json:"imageGIFEnabled"`
+	ImageHEICEnabled         bool   `json:"imageHEICEnabled"`
+	ImageHeaderMB            int    `json:"imageHeaderMB"`
+	ImageHeaderUnlimited     bool   `json:"imageHeaderUnlimited"`
+	ImageScanBudgetMB        int    `json:"imageScanBudgetMB"`
+	ImageScanBudgetUnlimited bool   `json:"imageScanBudgetUnlimited"`
+	EXIFEnabled              bool   `json:"exifEnabled"`
+	EXIFFileMB               int    `json:"exifFileMB"`
+	EXIFFileUnlimited        bool   `json:"exifFileUnlimited"`
+	EXIFTotalMB              int    `json:"exifTotalMB"`
+	EXIFTotalUnlimited       bool   `json:"exifTotalUnlimited"`
+	TextIndexEnabled         bool   `json:"textIndexEnabled"`
+	TextDocumentsEnabled     bool   `json:"textDocumentsEnabled"`
+	TextDataEnabled          bool   `json:"textDataEnabled"`
+	TextSourceEnabled        bool   `json:"textSourceEnabled"`
+	TextFileMB               int    `json:"textFileMB"`
+	TextFileUnlimited        bool   `json:"textFileUnlimited"`
+	TextTotalMB              int    `json:"textTotalMB"`
+	TextTotalUnlimited       bool   `json:"textTotalUnlimited"`
+	ImagePreviewEnabled      bool   `json:"imagePreviewEnabled"`
+	HEICPreviewEnabled       bool   `json:"heicPreviewEnabled"`
+	ImagePreviewMB           int    `json:"imagePreviewMB"`
+	ImagePreviewUnlimited    bool   `json:"imagePreviewUnlimited"`
+	ThumbnailCacheMB         int    `json:"thumbnailCacheMB"`
+	ThumbnailCacheUnlimited  bool   `json:"thumbnailCacheUnlimited"`
+	PDFPreviewMB             int    `json:"pdfPreviewMB"`
+	VideoPreviewMB           int    `json:"videoPreviewMB"`
+	AIEnabled                bool   `json:"aiEnabled"`
+	AIProvider               string `json:"aiProvider"`
+	AIEndpoint               string `json:"aiEndpoint"`
+	AIModel                  string `json:"aiModel"`
+	AIFileMB                 int    `json:"aiFileMB"`
+	AIFileUnlimited          bool   `json:"aiFileUnlimited"`
+	AITotalMB                int    `json:"aiTotalMB"`
+	AITotalUnlimited         bool   `json:"aiTotalUnlimited"`
+	AITimeoutSeconds         int    `json:"aiTimeoutSeconds"`
 }
 
 func Defaults() Settings {
 	return Settings{
-		Version: 8, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 9, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
@@ -65,6 +74,7 @@ func Defaults() Settings {
 		TextDocumentsEnabled: true, TextDataEnabled: true, TextSourceEnabled: true, TextFileMB: 2, TextTotalMB: 500,
 		ImagePreviewEnabled: true, HEICPreviewEnabled: true, ImagePreviewMB: 100, ThumbnailCacheMB: 500, ThumbnailCacheUnlimited: true,
 		PDFPreviewMB: 40, VideoPreviewMB: 50,
+		AIProvider: "ollama", AIEndpoint: "http://127.0.0.1:11434", AIModel: "qwen2.5:1.5b", AIFileMB: 2, AITotalMB: 100, AITimeoutSeconds: 30,
 	}
 }
 
@@ -90,7 +100,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 8
+	settings.Version = 9
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -154,6 +164,24 @@ func (settings Settings) Validate() error {
 	}
 	if settings.VideoPreviewMB < 1 || settings.VideoPreviewMB > 250 {
 		return fmt.Errorf("Videolimit muss zwischen 1 und 250 MB liegen")
+	}
+	if settings.AIProvider != "ollama" && settings.AIProvider != "openrouter" {
+		return fmt.Errorf("KI-Anbieter muss Ollama oder OpenRouter sein")
+	}
+	if settings.AIEndpoint == "" {
+		return fmt.Errorf("KI-Endpunkt darf nicht leer sein")
+	}
+	if settings.AIModel == "" {
+		return fmt.Errorf("KI-Modell darf nicht leer sein")
+	}
+	if settings.AIFileMB < 1 || settings.AIFileMB > 1024 {
+		return fmt.Errorf("KI-Dateilimit muss zwischen 1 und 1024 MB liegen")
+	}
+	if settings.AITotalMB < 1 || settings.AITotalMB > 1_000_000 {
+		return fmt.Errorf("KI-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.AITimeoutSeconds < 5 || settings.AITimeoutSeconds > 300 {
+		return fmt.Errorf("KI-Zeitlimit muss zwischen 5 und 300 Sekunden liegen")
 	}
 	return nil
 }

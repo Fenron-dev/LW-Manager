@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dennis/vaultapp/internal/ai"
 	"github.com/dennis/vaultapp/internal/backup"
 	appconfig "github.com/dennis/vaultapp/internal/config"
 	"github.com/dennis/vaultapp/internal/database"
@@ -105,6 +106,14 @@ type ManagedBackup struct {
 	Modified string `json:"modified"`
 }
 
+type AIProviderStatus struct {
+	Enabled          bool   `json:"enabled"`
+	Provider         string `json:"provider"`
+	Endpoint         string `json:"endpoint"`
+	Model            string `json:"model"`
+	CredentialStored bool   `json:"credentialStored"`
+}
+
 type RestoreResult struct {
 	RollbackPath string `json:"rollbackPath"`
 	Files        int64  `json:"files"`
@@ -160,7 +169,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.32.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.33.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -455,6 +464,90 @@ func (a *App) SaveSettings(settings appconfig.Settings) error {
 		a.trimScanDiagnostics(int64(settings.ScanDiagnosticsTotalMB) << 20)
 	}
 	return nil
+}
+
+func (a *App) GetAIProviderStatus() (AIProviderStatus, error) {
+	settings := a.currentSettings()
+	status := AIProviderStatus{Enabled: settings.AIEnabled, Provider: settings.AIProvider, Endpoint: settings.AIEndpoint, Model: settings.AIModel}
+	path, err := a.aiCredentialPath()
+	if err != nil {
+		return status, err
+	}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		status.CredentialStored = strings.TrimSpace(string(data)) != ""
+	} else if !os.IsNotExist(err) {
+		return status, err
+	}
+	return status, nil
+}
+
+func (a *App) SaveAICredential(credential string) error {
+	credential = strings.TrimSpace(credential)
+	if credential == "" {
+		return fmt.Errorf("API-Schlüssel darf nicht leer sein")
+	}
+	path, err := a.aiCredentialPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, []byte(credential+"\n"), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		_ = os.Remove(temporary)
+		return err
+	}
+	return nil
+}
+
+func (a *App) ClearAICredential() error {
+	path, err := a.aiCredentialPath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func (a *App) TestAIProvider() (ai.ConnectionResult, error) {
+	settings := a.currentSettings()
+	if !settings.AIEnabled {
+		return ai.ConnectionResult{}, fmt.Errorf("KI-Funktionen sind in den Einstellungen deaktiviert")
+	}
+	credential := ""
+	if settings.AIProvider == "openrouter" {
+		path, err := a.aiCredentialPath()
+		if err != nil {
+			return ai.ConnectionResult{}, err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return ai.ConnectionResult{}, fmt.Errorf("für OpenRouter ist noch kein API-Schlüssel gespeichert")
+			}
+			return ai.ConnectionResult{}, err
+		}
+		credential = string(data)
+	}
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return ai.TestConnection(ctx, ai.Config{Provider: settings.AIProvider, Endpoint: settings.AIEndpoint, Model: settings.AIModel, TimeoutSeconds: settings.AITimeoutSeconds}, credential)
+}
+
+func (a *App) aiCredentialPath() (string, error) {
+	if a.root == "" {
+		return "", fmt.Errorf("Vault ist nicht bereit")
+	}
+	return vault.DataPath(a.root, filepath.Join("secrets", "ai-provider.key"))
 }
 
 func (a *App) CreateBackup() (BackupResult, error) {

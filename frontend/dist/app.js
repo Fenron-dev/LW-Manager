@@ -96,6 +96,15 @@ async function showSettings() {
   try {
     const settings = await window.go.main.App.GetSettings();
     $('#setting-volume-detection').checked = settings.volumeDetectionEnabled;
+    $('#setting-ai-enabled').checked = settings.aiEnabled;
+    $('#setting-ai-provider').value = settings.aiProvider;
+    $('#setting-ai-endpoint').value = settings.aiEndpoint;
+    $('#setting-ai-model').value = settings.aiModel;
+    $('#setting-ai-file-limit').value = settings.aiFileMB;
+    $('#setting-ai-file-unlimited').checked = settings.aiFileUnlimited;
+    $('#setting-ai-total-limit').value = settings.aiTotalMB;
+    $('#setting-ai-total-unlimited').checked = settings.aiTotalUnlimited;
+    $('#setting-ai-timeout').value = settings.aiTimeoutSeconds;
     $('#setting-backup-enabled').checked = settings.backupEnabled;
     $('#setting-backup-thumbnails').checked = settings.backupIncludeThumbnails;
     $('#setting-backup-file-limit').value = settings.backupFileMB;
@@ -140,6 +149,7 @@ async function showSettings() {
     $('#setting-pdf-limit').value = settings.pdfPreviewMB;
     $('#setting-video-limit').value = settings.videoPreviewMB;
     syncSettingsControls();
+    await loadAIProviderStatus();
     await loadTagManagement();
     await loadScanDiagnostics();
     await loadManagedBackups();
@@ -277,8 +287,17 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 8,
+      version: 9,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
+      aiEnabled: $('#setting-ai-enabled').checked,
+      aiProvider: $('#setting-ai-provider').value,
+      aiEndpoint: $('#setting-ai-endpoint').value.trim(),
+      aiModel: $('#setting-ai-model').value.trim(),
+      aiFileMB: Number($('#setting-ai-file-limit').value),
+      aiFileUnlimited: $('#setting-ai-file-unlimited').checked,
+      aiTotalMB: Number($('#setting-ai-total-limit').value),
+      aiTotalUnlimited: $('#setting-ai-total-unlimited').checked,
+      aiTimeoutSeconds: Number($('#setting-ai-timeout').value),
       backupEnabled: $('#setting-backup-enabled').checked,
       backupIncludeThumbnails: $('#setting-backup-thumbnails').checked,
       backupFileMB: Number($('#setting-backup-file-limit').value),
@@ -430,6 +449,13 @@ async function restoreBackup() {
 }
 
 function syncSettingsControls() {
+  const aiEnabled = $('#setting-ai-enabled').checked;
+  const openRouter = $('#setting-ai-provider').value === 'openrouter';
+  ['#setting-ai-provider', '#setting-ai-endpoint', '#setting-ai-model', '#setting-ai-timeout', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited'].forEach((selector) => { $(selector).disabled = !aiEnabled; });
+  $('#setting-ai-file-limit').disabled = !aiEnabled || $('#setting-ai-file-unlimited').checked;
+  $('#setting-ai-total-limit').disabled = !aiEnabled || $('#setting-ai-total-unlimited').checked;
+  $('#ai-credential-fields').classList.toggle('hidden', !aiEnabled || !openRouter);
+  $('#test-ai-provider-button').disabled = !aiEnabled;
   const backupEnabled = $('#setting-backup-enabled').checked;
   $('#setting-backup-thumbnails').disabled = !backupEnabled;
   $('#setting-backup-file-unlimited').disabled = !backupEnabled;
@@ -460,6 +486,44 @@ function syncSettingsControls() {
   ['#setting-heic-preview', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => { $(selector).disabled = !previewEnabled; });
   $('#setting-image-limit').disabled = !previewEnabled || $('#setting-image-preview-unlimited').checked;
   $('#setting-thumbnail-cache-limit').disabled = !previewEnabled || $('#setting-thumbnail-cache-unlimited').checked;
+}
+
+async function loadAIProviderStatus() {
+  const status = await window.go.main.App.GetAIProviderStatus();
+  $('#ai-credential-status').textContent = status.credentialStored ? 'Schlüssel ist gespeichert' : 'Kein Schlüssel gespeichert';
+  $('#clear-ai-credential-button').disabled = !status.credentialStored;
+  return status;
+}
+
+async function saveAICredential() {
+  const credential = $('#setting-ai-credential').value.trim();
+  if (!credential) { $('#ai-provider-status').textContent = 'Bitte zuerst einen API-Schlüssel eingeben.'; return; }
+  const button = $('#save-ai-credential-button'); button.disabled = true;
+  try {
+    await window.go.main.App.SaveAICredential(credential);
+    $('#setting-ai-credential').value = '';
+    await loadAIProviderStatus();
+    $('#ai-provider-status').textContent = 'API-Schlüssel separat gespeichert.';
+  } catch (error) { $('#ai-provider-status').textContent = `Schlüssel konnte nicht gespeichert werden: ${error}`; }
+  finally { button.disabled = false; }
+}
+
+async function clearAICredential() {
+  if (!confirm('Den gespeicherten OpenRouter API-Schlüssel wirklich entfernen?')) return;
+  try { await window.go.main.App.ClearAICredential(); await loadAIProviderStatus(); $('#ai-provider-status').textContent = 'API-Schlüssel entfernt.'; }
+  catch (error) { $('#ai-provider-status').textContent = `Schlüssel konnte nicht entfernt werden: ${error}`; }
+}
+
+async function testAIProvider() {
+  if (!await saveSettings()) { syncSettingsControls(); return; }
+  const button = $('#test-ai-provider-button'); button.disabled = true;
+  $('#ai-provider-status').textContent = 'Verbindung und Modellliste werden geprüft …';
+  try {
+    const result = await window.go.main.App.TestAIProvider();
+    const extra = result.availableModels.length ? ` · ${result.availableModels.length.toLocaleString('de-DE')} Modelle gemeldet` : '';
+    $('#ai-provider-status').textContent = `${result.message}${extra}`;
+  } catch (error) { $('#ai-provider-status').textContent = `Verbindungstest fehlgeschlagen: ${error}`; }
+  finally { syncSettingsControls(); }
 }
 
 async function loadInfo() {
@@ -1238,8 +1302,18 @@ $('#scan-report-button').addEventListener('click', () => { if (currentScanDiagno
 $('#create-backup-button').addEventListener('click', createBackup);
 $('#inspect-backup-button').addEventListener('click', inspectBackup);
 $('#restore-backup-button').addEventListener('click', restoreBackup);
-['#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+$('#save-ai-credential-button').addEventListener('click', saveAICredential);
+$('#clear-ai-credential-button').addEventListener('click', clearAICredential);
+$('#test-ai-provider-button').addEventListener('click', testAIProvider);
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
+});
+$('#setting-ai-provider').addEventListener('change', () => {
+  const provider = $('#setting-ai-provider').value;
+  const endpoint = $('#setting-ai-endpoint');
+  const model = $('#setting-ai-model');
+  if (provider === 'openrouter' && endpoint.value === 'http://127.0.0.1:11434') { endpoint.value = 'https://openrouter.ai/api/v1'; model.value = 'openrouter/auto'; }
+  if (provider === 'ollama' && endpoint.value === 'https://openrouter.ai/api/v1') { endpoint.value = 'http://127.0.0.1:11434'; model.value = 'qwen2.5:1.5b'; }
 });
 $('#drive-scan-button').addEventListener('click', startScan);
 $('#refresh-volumes-button').addEventListener('click', async () => {

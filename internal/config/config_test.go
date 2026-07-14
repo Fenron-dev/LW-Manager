@@ -30,6 +30,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.ImagePreviewEnabled || !settings.HEICPreviewEnabled {
 		t.Fatalf("unexpected preview defaults: %+v", settings)
 	}
+	if settings.AIEnabled || settings.AIProvider != "ollama" || settings.AIEndpoint != "http://127.0.0.1:11434" || settings.AIModel == "" || settings.AIFileMB != 2 || settings.AITotalMB != 100 || settings.AITimeoutSeconds != 30 {
+		t.Fatalf("unexpected AI defaults: %+v", settings)
+	}
 	settings.MaxSnapshots = 3
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)
@@ -49,7 +52,20 @@ func TestLoadAddsDefaultsToOlderConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.ArchiveEnabled || !settings.VolumeDetectionEnabled || !settings.ImageAnalysisEnabled || settings.ImageHeaderMB != 4 || !settings.ThumbnailCacheUnlimited {
+	if settings.ArchiveEnabled || !settings.VolumeDetectionEnabled || !settings.ImageAnalysisEnabled || settings.ImageHeaderMB != 4 || !settings.ThumbnailCacheUnlimited || settings.AIProvider != "ollama" {
 		t.Fatalf("legacy migration lost values or defaults: %+v", settings)
+	}
+}
+
+func TestAISettingsValidation(t *testing.T) {
+	settings := Defaults()
+	settings.AIProvider = "unknown"
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected provider validation error")
+	}
+	settings = Defaults()
+	settings.AITimeoutSeconds = 2
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected timeout validation error")
 	}
 }
