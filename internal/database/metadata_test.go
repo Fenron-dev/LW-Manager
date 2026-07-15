@@ -121,6 +121,10 @@ func TestManualFileTagsSurviveRescanAndFilterLibrary(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(details.Tags, []string{"Projekt", "Wichtig"}) {
 		t.Fatalf("file tags = %#v, %v", details, err)
 	}
+	source, err := catalog.SourceFile(result.Files[0].ID)
+	if err != nil || source.Root != root || source.Relative != "docs/plan.txt" || source.Path != filepath.Join(root, "docs", "plan.txt") {
+		t.Fatalf("source location = %#v, %v", source, err)
+	}
 	result, err = catalog.Search("", "", "WICHTIG", 0, false, 50, 0)
 	if err != nil || result.Total != 1 {
 		t.Fatalf("tag filtered search = %#v, %v", result, err)

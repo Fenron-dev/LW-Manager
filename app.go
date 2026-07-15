@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"sort"
@@ -78,6 +79,14 @@ type ScanDiagnostic struct {
 	IssuesTruncated bool            `json:"issuesTruncated"`
 	Error           string          `json:"error,omitempty"`
 	LogPath         string          `json:"logPath"`
+}
+
+type FileLocation struct {
+	RelativePath    string `json:"relativePath"`
+	FullPath        string `json:"fullPath"`
+	Available       bool   `json:"available"`
+	FolderAvailable bool   `json:"folderAvailable"`
+	Status          string `json:"status"`
 }
 
 type ConnectedVolumes struct {
@@ -187,7 +196,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.40.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.41.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -483,7 +492,15 @@ func (a *App) GetDrives() ([]database.Drive, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
-	return a.catalog.Drives()
+	drives, err := a.catalog.Drives()
+	if err != nil {
+		return nil, err
+	}
+	for index := range drives {
+		info, statErr := os.Stat(drives[index].Path)
+		drives[index].Online = statErr == nil && info.IsDir()
+	}
+	return drives, nil
 }
 
 func (a *App) GetConnectedVolumes() (ConnectedVolumes, error) {
@@ -592,15 +609,8 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	info, err := os.Lstat(source.Path)
-	if err != nil {
+	if err := verifyCatalogSource(source); err != nil {
 		return "", err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return "", fmt.Errorf("Vorschauen verarbeiten nur reguläre Dateien, keine Verknüpfungen")
-	}
-	if info.Size() != source.Size || info.ModTime().UTC().Format(time.RFC3339Nano) != source.Modified {
-		return "", fmt.Errorf("Datei wurde seit dem letzten Scan geändert; bitte Datenträger erneut scannen")
 	}
 	cache, err := vault.AssetPath(a.root, "thumbnails")
 	if err != nil {
@@ -614,6 +624,155 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 		PDFEnabled:     settings.PDFPreviewEnabled, PDFMB: settings.PDFPreviewMB, PDFUnlimited: settings.PDFPreviewUnlimited,
 		VideoEnabled: settings.VideoPreviewEnabled, VideoMB: settings.VideoPreviewMB, VideoUnlimited: settings.VideoPreviewUnlimited,
 	})
+}
+
+func (a *App) GetFileLocation(id int64) (FileLocation, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return FileLocation{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	source, err := a.catalog.SourceFile(id)
+	if err != nil {
+		return FileLocation{}, err
+	}
+	result := FileLocation{RelativePath: source.Relative, FullPath: source.Path, Available: true, Status: "Datei ist verfügbar"}
+	result.FolderAvailable = verifyContainingFolder(source) == nil
+	if err := verifyCatalogSource(source); err != nil {
+		result.Available = false
+		result.Status = err.Error()
+	}
+	return result, nil
+}
+
+func (a *App) CopyFilePath(id int64, fullPath bool) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	source, err := a.catalog.SourceFile(id)
+	if err != nil {
+		return err
+	}
+	value := source.Relative
+	if fullPath {
+		value = source.Path
+	}
+	return wailsruntime.ClipboardSetText(a.ctx, value)
+}
+
+func (a *App) RevealFile(id int64) error {
+	source, err := a.availableSource(id)
+	if err != nil {
+		return err
+	}
+	return openFileManager(source.Path, true)
+}
+
+func (a *App) OpenContainingFolder(id int64) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	source, err := a.catalog.SourceFile(id)
+	if err != nil {
+		return err
+	}
+	if err := verifyContainingFolder(source); err != nil {
+		return err
+	}
+	return openFileManager(filepath.Dir(source.Path), false)
+}
+
+func (a *App) availableSource(id int64) (database.SourceFile, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return database.SourceFile{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	source, err := a.catalog.SourceFile(id)
+	if err != nil {
+		return database.SourceFile{}, err
+	}
+	if err := verifyCatalogSource(source); err != nil {
+		return database.SourceFile{}, err
+	}
+	return source, nil
+}
+
+func verifyCatalogSource(source database.SourceFile) error {
+	rootInfo, err := os.Stat(source.Root)
+	if err != nil || !rootInfo.IsDir() {
+		return fmt.Errorf("Datenträger ist nicht angeschlossen")
+	}
+	info, err := os.Lstat(source.Path)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("Datei fehlt am katalogisierten Pfad")
+	}
+	if err != nil {
+		return fmt.Errorf("Datei kann nicht geprüft werden: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("Datei ist keine reguläre Datei oder eine Verknüpfung")
+	}
+	if err := verifyResolvedInside(source.Root, source.Path); err != nil {
+		return err
+	}
+	if info.Size() != source.Size || info.ModTime().UTC().Format(time.RFC3339Nano) != source.Modified {
+		return fmt.Errorf("Datei wurde seit dem letzten Scan geändert; bitte Datenträger erneut scannen")
+	}
+	return nil
+}
+
+func verifyContainingFolder(source database.SourceFile) error {
+	rootInfo, err := os.Stat(source.Root)
+	if err != nil || !rootInfo.IsDir() {
+		return fmt.Errorf("Datenträger ist nicht angeschlossen")
+	}
+	folder := filepath.Dir(source.Path)
+	info, err := os.Stat(folder)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("übergeordneter Ordner ist nicht verfügbar")
+	}
+	return verifyResolvedInside(source.Root, folder)
+}
+
+func verifyResolvedInside(root, candidate string) error {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("Datenträgerpfad kann nicht geprüft werden: %w", err)
+	}
+	resolvedCandidate, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return fmt.Errorf("Dateipfad kann nicht geprüft werden: %w", err)
+	}
+	relative, err := filepath.Rel(resolvedRoot, resolvedCandidate)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("Dateipfad führt über eine Verknüpfung aus dem Datenträger heraus")
+	}
+	return nil
+}
+
+func openFileManager(path string, selectFile bool) error {
+	var command *exec.Cmd
+	switch goruntime.GOOS {
+	case "darwin":
+		if selectFile {
+			command = exec.Command("/usr/bin/open", "-R", path)
+		} else {
+			command = exec.Command("/usr/bin/open", path)
+		}
+	case "windows":
+		if selectFile {
+			command = exec.Command("explorer.exe", "/select,", path)
+		} else {
+			command = exec.Command("explorer.exe", path)
+		}
+	default:
+		target := path
+		if selectFile {
+			target = filepath.Dir(path)
+		}
+		command = exec.Command("xdg-open", target)
+	}
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("Dateimanager konnte nicht geöffnet werden: %w", err)
+	}
+	return command.Process.Release()
 }
 
 func (a *App) GetFileDetails(id int64) (database.FileResult, error) {

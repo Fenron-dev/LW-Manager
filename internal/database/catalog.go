@@ -57,6 +57,7 @@ type Drive struct {
 	UsedSize        int64    `json:"usedSize"`
 	FileCount       int64    `json:"fileCount"`
 	UpdatedAt       string   `json:"updatedAt"`
+	Online          bool     `json:"online"`
 }
 
 type FileResult struct {
@@ -158,8 +159,8 @@ type DirectoryEntry struct {
 }
 
 type SourceFile struct {
-	Path, MIMEType, Modified string
-	Size                     int64
+	Root, Relative, Path, MIMEType, Modified string
+	Size                                     int64
 }
 
 type Snapshot struct {
@@ -663,6 +664,8 @@ func (c *Catalog) SourceFile(id int64) (SourceFile, error) {
 		return source, fmt.Errorf("ungültiger absoluter Dateipfad")
 	}
 	root = filepath.Clean(root)
+	source.Root = root
+	source.Relative = filepath.ToSlash(relative)
 	source.Path = filepath.Join(root, filepath.FromSlash(relative))
 	inside, err := filepath.Rel(root, source.Path)
 	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {

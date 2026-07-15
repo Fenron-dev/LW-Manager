@@ -723,7 +723,18 @@ async function exportLibrary() {
 		$('#export-status').textContent = result.cancelled ? '' : ` · ${result.files.toLocaleString('de-DE')} Dateien als ${formatBytes(result.bytes)} exportiert`;
 	} catch (error) {
 		$('#export-status').textContent = ` · Export fehlgeschlagen: ${error}`;
-	} finally { button.disabled = false; }
+	} finally {
+		if (button.id === 'reveal-file-button' || button.id === 'open-folder-button') {
+			try {
+				const location = await window.go.main.App.GetFileLocation(id);
+				$('#reveal-file-button').disabled = !location.available;
+				$('#open-folder-button').disabled = !location.folderAvailable;
+			} catch (_) {
+				$('#reveal-file-button').disabled = true;
+				$('#open-folder-button').disabled = true;
+			}
+		} else { button.disabled = false; }
+	}
 }
 
 function driveName(drive) {
@@ -778,13 +789,13 @@ async function loadDrives() {
     compareDrive.add(new Option(driveName(drive), String(drive.id)));
     if (!visibleDrives.includes(drive)) continue;
     const row = document.createElement('div');
-    row.className = 'drive-row';
+    row.className = `drive-row${drive.online ? '' : ' offline'}`;
     const identity = document.createElement('div');
     identity.className = 'drive-identity';
     const heading = document.createElement('strong');
     heading.textContent = driveName(drive);
     const source = document.createElement('span');
-    source.textContent = [drive.inventoryNumber ? `Nr. ${drive.inventoryNumber}` : '', drive.label, drive.storageLocation ? `Lager: ${drive.storageLocation}` : ''].filter(Boolean).join(' · ');
+    source.textContent = [drive.online ? 'Online' : 'Offline', drive.inventoryNumber ? `Nr. ${drive.inventoryNumber}` : '', drive.label, drive.storageLocation ? `Lager: ${drive.storageLocation}` : ''].filter(Boolean).join(' · ');
     identity.append(heading, source);
     appendTagBadges(identity, drive.tags);
     const kind = document.createElement('span');
@@ -1202,6 +1213,23 @@ async function openFileDialog(file) {
   $('#detail-type').textContent = `${file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt')}${dimensions}`;
   $('#detail-size').textContent = formatBytes(file.size);
   $('#detail-modified').textContent = formatDate(file.modified);
+	['#reveal-file-button', '#open-folder-button', '#copy-relative-path-button', '#copy-full-path-button'].forEach((selector) => { $(selector).dataset.fileId = file.id || ''; $(selector).disabled = true; });
+	$('#file-location-status').textContent = file.id ? 'Speicherort wird geprüft …' : 'Kein aktueller Katalogeintrag';
+	$('#file-location-status').classList.remove('offline');
+	$('#file-full-path').textContent = '';
+	if (file.id) {
+		window.go.main.App.GetFileLocation(file.id).then((location) => {
+			if (!$('#file-dialog').open || Number($('#reveal-file-button').dataset.fileId) !== Number(file.id)) return;
+			$('#file-full-path').textContent = location.fullPath;
+			$('#file-full-path').title = location.fullPath;
+			$('#file-location-status').textContent = location.status;
+			$('#file-location-status').classList.toggle('offline', !location.available);
+			$('#reveal-file-button').disabled = !location.available;
+			$('#open-folder-button').disabled = !location.folderAvailable;
+			$('#copy-relative-path-button').disabled = false;
+			$('#copy-full-path-button').disabled = false;
+		}).catch((error) => { $('#file-location-status').textContent = `Speicherort nicht verfügbar: ${error}`; $('#file-location-status').classList.add('offline'); });
+	}
 	$('#edit-file-tags').value = (file.tags || []).join(', ');
 	$('#save-file-tags-button').dataset.fileId = file.id || '';
 	$('#save-file-tags-button').disabled = !file.id;
@@ -1265,6 +1293,20 @@ async function openFileDialog(file) {
     }).catch((error) => { previewStatus.textContent = `Keine Vorschau: ${error}`; });
   }
   $('#file-dialog').showModal();
+}
+
+async function runFileLocationAction(button, action, successMessage) {
+	const id = Number(button.dataset.fileId);
+	if (!id) return;
+	button.disabled = true;
+	try {
+		await action(id);
+		$('#file-location-status').textContent = successMessage;
+		$('#file-location-status').classList.remove('offline');
+	} catch (error) {
+		$('#file-location-status').textContent = `Aktion fehlgeschlagen: ${error}`;
+		$('#file-location-status').classList.add('offline');
+	} finally { button.disabled = false; }
 }
 
 async function saveCurrentFileTags() {
@@ -1506,6 +1548,10 @@ $('#add-location-button').addEventListener('click', addStorageLocation);
 $('#analyze-file-button').addEventListener('click', analyzeCurrentFile);
 $('#analyze-image-button').addEventListener('click', analyzeCurrentImage);
 $('#save-file-tags-button').addEventListener('click', saveCurrentFileTags);
+$('#reveal-file-button').addEventListener('click', () => runFileLocationAction($('#reveal-file-button'), (id) => window.go.main.App.RevealFile(id), 'Datei wurde im Dateimanager angezeigt.'));
+$('#open-folder-button').addEventListener('click', () => runFileLocationAction($('#open-folder-button'), (id) => window.go.main.App.OpenContainingFolder(id), 'Ordner wurde im Dateimanager geöffnet.'));
+$('#copy-relative-path-button').addEventListener('click', () => runFileLocationAction($('#copy-relative-path-button'), (id) => window.go.main.App.CopyFilePath(id, false), 'Relativer Pfad wurde kopiert.'));
+$('#copy-full-path-button').addEventListener('click', () => runFileLocationAction($('#copy-full-path-button'), (id) => window.go.main.App.CopyFilePath(id, true), 'Vollständiger Pfad wurde kopiert.'));
 $('#archive-back').addEventListener('click', () => { $('#snapshot-list').classList.remove('hidden'); $('#archive-browser').classList.add('hidden'); });
 $('#archive-search-button').addEventListener('click', () => loadArchiveFiles(1));
 $('#archive-search').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadArchiveFiles(1); } });

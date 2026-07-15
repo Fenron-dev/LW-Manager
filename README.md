@@ -24,6 +24,8 @@ Die Einstellungen werden portabel unter `data/config.json` abgelegt. Dort lassen
 
 PDF- und Videovorschauen lassen sich unabhängig aktivieren und besitzen jeweils ein Quelldateilimit mit optionalem Unbegrenzt-Modus. Sie werden ausschließlich für die gerade geöffnete Detailansicht in den Arbeitsspeicher geladen und nicht im Vault zwischengespeichert, weshalb kein dauerhafter Gesamt-Speicherverbrauch entsteht. Vor jeder Vorschau prüft VaultApp außerdem, ob es weiterhin dieselbe reguläre Datei wie beim letzten Scan ist; nachträglich ausgetauschte Dateien oder symbolische Verknüpfungen werden abgewiesen.
 
+Die Dateidetails zeigen, ob die katalogisierte Originaldatei noch erreichbar und seit dem Scan unverändert ist. Von dort kann sie im Finder, Explorer oder Linux-Dateimanager angezeigt, ihr Ordner geöffnet oder ihr relativer beziehungsweise vollständiger Pfad kopiert werden. Vor externen Dateiaktionen prüft VaultApp regulären Dateityp, Größe, Änderungszeit und aufgelöste Verknüpfungen erneut. Nicht angeschlossene Datenträger werden in der Datenträgerliste als offline markiert; reine Katalog- und Archivansichten bleiben weiterhin verfügbar.
+
 Der optionale Volltextindex erfasst freigegebene UTF-8-Dokumente, strukturierte Datendateien und Quellcode. Dateilimit, Gesamtbudget und die drei Formatgruppen werden in den Einstellungen gesteuert. In der Bibliothek entscheidet der Schalter **Auch indexierte Dateiinhalte durchsuchen**, ob eine Suche zusätzlich den gespeicherten Inhalt berücksichtigt.
 
 Die aktuell gefilterte Bibliotheksansicht lässt sich als UTF-8-CSV exportieren. Enthalten sind Dateiname, Datenträger, relativer Pfad, Typ, Größe, Änderungsdatum, manuelle Tags und vorhandene KI-Metadaten; Originaldateien werden nicht kopiert. Der Export wird zeilenweise geschrieben, schützt Tabellenprogramme vor Formelausführung durch präparierte Textfelder und landet nur am ausdrücklich gewählten Ziel. Unter **Einstellungen → Katalogexport** lässt sich die Funktion deaktivieren und die maximale CSV-Gesamtgröße begrenzen oder auf unbegrenzt setzen.
@@ -60,7 +62,7 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
 
 ### Nächste Umsetzungsschritte
 
-1. **Dateikomfort und Offline-Status**
+1. **Dateikomfort und Offline-Status – umgesetzt in 0.41.0-dev**
    - Datei beziehungsweise übergeordneten Ordner im Finder, Explorer oder Dateimanager anzeigen.
    - Relativen und vollständigen Pfad kopieren.
    - Nicht angeschlossene Datenträger eindeutig als offline kennzeichnen und Dateiaktionen dann deaktivieren.
