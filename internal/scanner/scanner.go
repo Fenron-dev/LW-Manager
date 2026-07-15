@@ -56,9 +56,11 @@ type EXIFAnalysisOptions struct {
 
 type TextIndexOptions struct {
 	Enabled                          bool
-	Documents, Data, SourceCode      bool
+	Documents, PDF, Data, SourceCode bool
 	PerFileBytes, TotalBytes         int64
+	StoredBytes                      int64
 	PerFileUnlimited, TotalUnlimited bool
+	StoredLimitEnabled               bool
 }
 
 type ExclusionOptions struct {
@@ -102,6 +104,7 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 	var imageBytesRead int64
 	var exifBytesRead int64
 	var textBytesRead int64
+	var textBytesStored int64
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -149,7 +152,7 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 		}
 		width, height := imageDimensions(path, extension, imageOptions, &imageBytesRead)
 		metadata := imageEXIF(path, extension, exifOptions, &exifBytesRead)
-		textContent := textPreview(path, extension, textOptions, &textBytesRead)
+		textContent := textPreview(path, extension, textOptions, &textBytesRead, &textBytesStored)
 		report.Files = append(report.Files, File{Path: filepath.ToSlash(relative), Filename: entry.Name(), Extension: strings.TrimPrefix(extension, "."), Size: info.Size(), MIMEType: mediaType, Metadata: metadata, TextContent: textContent, Width: width, Height: height, Modified: info.ModTime()})
 		report.Bytes += info.Size()
 		if progress != nil {
@@ -193,7 +196,7 @@ func excludedByRule(relative string, options ExclusionOptions) bool {
 	return false
 }
 
-func textPreview(path, extension string, options TextIndexOptions, totalRead *int64) string {
+func textPreview(path, extension string, options TextIndexOptions, totalRead, totalStored *int64) string {
 	if !options.Enabled || !textExtensionEnabled(extension, options) {
 		return ""
 	}
@@ -210,6 +213,13 @@ func textPreview(path, extension string, options TextIndexOptions, totalRead *in
 			limit = remaining
 		}
 	}
+	storedLimit := int64(1<<63 - 1)
+	if options.StoredLimitEnabled {
+		storedLimit = options.StoredBytes - *totalStored
+		if storedLimit <= 0 {
+			return ""
+		}
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return ""
@@ -220,6 +230,11 @@ func textPreview(path, extension string, options TextIndexOptions, totalRead *in
 	*totalRead += reader.read
 	if err != nil || len(data) == 0 {
 		return ""
+	}
+	if extension == ".pdf" {
+		text := extractPDFText(data, storedLimit)
+		*totalStored += int64(len(text))
+		return text
 	}
 	for _, value := range data {
 		if value == 0 {
@@ -239,11 +254,27 @@ func textPreview(path, extension string, options TextIndexOptions, totalRead *in
 			return ""
 		}
 	}
-	return strings.TrimSpace(string(data))
+	text := strings.TrimSpace(string(data))
+	text = truncateUTF8(text, storedLimit)
+	*totalStored += int64(len(text))
+	return text
+}
+
+func truncateUTF8(value string, maximum int64) string {
+	if maximum < 0 || int64(len(value)) <= maximum {
+		return value
+	}
+	value = value[:maximum]
+	for len(value) > 0 && !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+	return strings.TrimSpace(value)
 }
 
 func textExtensionEnabled(extension string, options TextIndexOptions) bool {
 	switch extension {
+	case ".pdf":
+		return options.PDF
 	case ".txt", ".md", ".markdown", ".log", ".csv", ".tsv", ".rtf":
 		return options.Documents
 	case ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf":

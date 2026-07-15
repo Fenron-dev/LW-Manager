@@ -189,6 +189,28 @@ func TestFileHashSurvivesOnlyUnchangedRescan(t *testing.T) {
 	}
 }
 
+func TestStoredTextBytesExcludeReplacedDrive(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	firstRoot := t.TempDir()
+	secondRoot := t.TempDir()
+	for _, scan := range []DriveScan{
+		{Path: firstRoot, Label: "FIRST", UUID: "volume-first", Files: []scanner.File{{Path: "one.txt", Filename: "one.txt", TextContent: "älterer Text"}}},
+		{Path: secondRoot, Label: "SECOND", UUID: "volume-second", Files: []scanner.File{{Path: "two.txt", Filename: "two.txt", TextContent: "anderer Index"}}},
+	} {
+		if err := catalog.ReplaceDriveScan(scan); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bytes, err := catalog.StoredTextBytesExcludingDrive("VOLUME-FIRST", firstRoot)
+	if err != nil || bytes != int64(len("anderer Index")) {
+		t.Fatalf("stored bytes excluding volume = %d, %v", bytes, err)
+	}
+	bytes, err = catalog.StoredTextBytesExcludingDrive("", secondRoot)
+	if err != nil || bytes != int64(len("älterer Text")+len("anderer Index")) {
+		t.Fatalf("stored bytes for unknown path identity = %d, %v", bytes, err)
+	}
+}
+
 func TestDuplicatePreferenceSurvivesFileIDChange(t *testing.T) {
 	catalog := openMetadataTestCatalog(t)
 	modified := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)

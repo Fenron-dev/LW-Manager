@@ -312,6 +312,25 @@ func (c *Catalog) Stats() (files, drives int64, err error) {
 	return
 }
 
+// StoredTextBytesExcludingDrive returns the UTF-8 byte size of index text that
+// will remain when the identified drive is replaced by a new scan.
+func (c *Catalog) StoredTextBytesExcludingDrive(uuid, root string) (int64, error) {
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		return 0, err
+	}
+	key := strings.TrimSpace(uuid)
+	if key == "" {
+		key = fmt.Sprintf("path:%x", sha256.Sum256([]byte(filepath.Clean(absolute))))
+	} else {
+		key = "volume:" + strings.ToLower(key)
+	}
+	var bytes int64
+	err = c.readDB.QueryRow(`SELECT COALESCE(SUM(LENGTH(CAST(COALESCE(f.text_content,'') AS BLOB))),0)
+		FROM files f JOIN drives d ON d.id=f.drive_id WHERE d.uuid<>?`, key).Scan(&bytes)
+	return bytes, err
+}
+
 func (c *Catalog) Search(query, extension, tag string, driveID int64, includeContent bool, limit, offset int) (SearchResult, error) {
 	if limit < 1 || limit > 100 {
 		limit = 50

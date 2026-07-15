@@ -159,12 +159,15 @@ async function showSettings() {
     $('#setting-exif-total-unlimited').checked = settings.exifTotalUnlimited;
     $('#setting-text-enabled').checked = settings.textIndexEnabled;
     $('#setting-text-documents').checked = settings.textDocumentsEnabled;
+    $('#setting-text-pdf').checked = settings.textPDFEnabled;
     $('#setting-text-data').checked = settings.textDataEnabled;
     $('#setting-text-source').checked = settings.textSourceEnabled;
     $('#setting-text-file-limit').value = settings.textFileMB;
     $('#setting-text-file-unlimited').checked = settings.textFileUnlimited;
     $('#setting-text-total-limit').value = settings.textTotalMB;
     $('#setting-text-total-unlimited').checked = settings.textTotalUnlimited;
+    $('#setting-text-stored-limit').value = settings.textStoredMB;
+    $('#setting-text-stored-unlimited').checked = settings.textStoredUnlimited;
     $('#setting-image-preview-enabled').checked = settings.imagePreviewEnabled;
     $('#setting-heic-preview').checked = settings.heicPreviewEnabled;
     $('#setting-image-limit').value = settings.imagePreviewMB;
@@ -380,12 +383,15 @@ async function saveSettings() {
       exifTotalUnlimited: $('#setting-exif-total-unlimited').checked,
       textIndexEnabled: $('#setting-text-enabled').checked,
       textDocumentsEnabled: $('#setting-text-documents').checked,
+      textPDFEnabled: $('#setting-text-pdf').checked,
       textDataEnabled: $('#setting-text-data').checked,
       textSourceEnabled: $('#setting-text-source').checked,
       textFileMB: Number($('#setting-text-file-limit').value),
       textFileUnlimited: $('#setting-text-file-unlimited').checked,
       textTotalMB: Number($('#setting-text-total-limit').value),
       textTotalUnlimited: $('#setting-text-total-unlimited').checked,
+      textStoredMB: Number($('#setting-text-stored-limit').value),
+      textStoredUnlimited: $('#setting-text-stored-unlimited').checked,
       imagePreviewEnabled: $('#setting-image-preview-enabled').checked,
       heicPreviewEnabled: $('#setting-heic-preview').checked,
       imagePreviewMB: Number($('#setting-image-limit').value),
@@ -555,9 +561,10 @@ function syncSettingsControls() {
   $('#setting-exif-file-limit').disabled = !exifEnabled || $('#setting-exif-file-unlimited').checked;
   $('#setting-exif-total-limit').disabled = !exifEnabled || $('#setting-exif-total-unlimited').checked;
   const textEnabled = $('#setting-text-enabled').checked;
-  ['#setting-text-documents', '#setting-text-data', '#setting-text-source', '#setting-text-file-unlimited', '#setting-text-total-unlimited'].forEach((selector) => { $(selector).disabled = !textEnabled; });
+  ['#setting-text-documents', '#setting-text-pdf', '#setting-text-data', '#setting-text-source', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-text-stored-unlimited'].forEach((selector) => { $(selector).disabled = !textEnabled; });
   $('#setting-text-file-limit').disabled = !textEnabled || $('#setting-text-file-unlimited').checked;
   $('#setting-text-total-limit').disabled = !textEnabled || $('#setting-text-total-unlimited').checked;
+  $('#setting-text-stored-limit').disabled = !textEnabled || $('#setting-text-stored-unlimited').checked;
   const previewEnabled = $('#setting-image-preview-enabled').checked;
   ['#setting-heic-preview', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => { $(selector).disabled = !previewEnabled; });
   $('#setting-image-limit').disabled = !previewEnabled || $('#setting-image-preview-unlimited').checked;
@@ -1724,7 +1731,7 @@ $('#restore-backup-button').addEventListener('click', restoreBackup);
 $('#save-ai-credential-button').addEventListener('click', saveAICredential);
 $('#clear-ai-credential-button').addEventListener('click', clearAICredential);
 $('#test-ai-provider-button').addEventListener('click', testAIProvider);
-['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-quarantine-enabled', '#setting-quarantine-file-unlimited', '#setting-quarantine-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-scan-exclusions-enabled', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-quarantine-enabled', '#setting-quarantine-file-unlimited', '#setting-quarantine-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-scan-exclusions-enabled', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-text-stored-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#setting-ai-provider').addEventListener('change', () => {

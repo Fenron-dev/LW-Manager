@@ -46,12 +46,15 @@ type Settings struct {
 	EXIFTotalUnlimited               bool     `json:"exifTotalUnlimited"`
 	TextIndexEnabled                 bool     `json:"textIndexEnabled"`
 	TextDocumentsEnabled             bool     `json:"textDocumentsEnabled"`
+	TextPDFEnabled                   bool     `json:"textPDFEnabled"`
 	TextDataEnabled                  bool     `json:"textDataEnabled"`
 	TextSourceEnabled                bool     `json:"textSourceEnabled"`
 	TextFileMB                       int      `json:"textFileMB"`
 	TextFileUnlimited                bool     `json:"textFileUnlimited"`
 	TextTotalMB                      int      `json:"textTotalMB"`
 	TextTotalUnlimited               bool     `json:"textTotalUnlimited"`
+	TextStoredMB                     int      `json:"textStoredMB"`
+	TextStoredUnlimited              bool     `json:"textStoredUnlimited"`
 	ImagePreviewEnabled              bool     `json:"imagePreviewEnabled"`
 	HEICPreviewEnabled               bool     `json:"heicPreviewEnabled"`
 	ImagePreviewMB                   int      `json:"imagePreviewMB"`
@@ -97,13 +100,13 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 16, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 17, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{},
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
 		EXIFFileMB: 8, EXIFTotalMB: 256, EXIFTotalUnlimited: true,
-		TextDocumentsEnabled: true, TextDataEnabled: true, TextSourceEnabled: true, TextFileMB: 2, TextTotalMB: 500,
+		TextDocumentsEnabled: true, TextDataEnabled: true, TextSourceEnabled: true, TextFileMB: 2, TextTotalMB: 500, TextStoredMB: 500,
 		ImagePreviewEnabled: true, HEICPreviewEnabled: true, ImagePreviewMB: 100, ThumbnailCacheMB: 500, ThumbnailCacheUnlimited: true,
 		PDFPreviewEnabled: true, PDFPreviewMB: 40, VideoPreviewEnabled: true, VideoPreviewMB: 50,
 		AIProvider: "ollama", AIEndpoint: "http://127.0.0.1:11434", AIModel: "qwen2.5:1.5b", AIFileMB: 2, AITotalMB: 100, AITimeoutSeconds: 30,
@@ -139,7 +142,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 16
+	settings.Version = 17
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -214,6 +217,9 @@ func (settings Settings) Validate() error {
 	}
 	if settings.TextTotalMB < 1 || settings.TextTotalMB > 1_000_000 {
 		return fmt.Errorf("Textindex-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.TextStoredMB < 1 || settings.TextStoredMB > 1_000_000 {
+		return fmt.Errorf("Textindex-Speicherlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.ThumbnailCacheMB < 1 || settings.ThumbnailCacheMB > 1_000_000 {
 		return fmt.Errorf("Vorschau-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")

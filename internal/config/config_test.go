@@ -27,7 +27,7 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if settings.EXIFEnabled || settings.EXIFFileMB != 8 || !settings.EXIFTotalUnlimited {
 		t.Fatalf("unexpected EXIF defaults: %+v", settings)
 	}
-	if settings.TextIndexEnabled || !settings.TextDocumentsEnabled || !settings.TextDataEnabled || !settings.TextSourceEnabled || settings.TextFileMB != 2 || settings.TextTotalMB != 500 {
+	if settings.TextIndexEnabled || !settings.TextDocumentsEnabled || settings.TextPDFEnabled || !settings.TextDataEnabled || !settings.TextSourceEnabled || settings.TextFileMB != 2 || settings.TextTotalMB != 500 || settings.TextStoredMB != 500 || settings.TextStoredUnlimited {
 		t.Fatalf("unexpected text index defaults: %+v", settings)
 	}
 	if !settings.ImagePreviewEnabled || !settings.HEICPreviewEnabled {
@@ -86,6 +86,19 @@ func TestCatalogExportLimitValidation(t *testing.T) {
 	settings.CatalogExportMaxMB = 1_000_001
 	if err := settings.Validate(); err == nil {
 		t.Fatal("expected catalog export upper limit validation error")
+	}
+}
+
+func TestTextIndexStorageLimitValidation(t *testing.T) {
+	settings := Defaults()
+	settings.TextStoredMB = 0
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected text index storage lower limit validation error")
+	}
+	settings = Defaults()
+	settings.TextStoredMB = 1_000_001
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected text index storage upper limit validation error")
 	}
 }
 
