@@ -58,4 +58,40 @@ Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet re
 
 Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erweiterungen werden anhand der Praxistests priorisiert.
 
+### Nächste Umsetzungsschritte
+
+1. **Dateikomfort und Offline-Status**
+   - Datei beziehungsweise übergeordneten Ordner im Finder, Explorer oder Dateimanager anzeigen.
+   - Relativen und vollständigen Pfad kopieren.
+   - Nicht angeschlossene Datenträger eindeutig als offline kennzeichnen und Dateiaktionen dann deaktivieren.
+
+2. **Sichere Duplikatverwaltung**
+   - Fundorte direkt aus einer Duplikatgruppe öffnen und ein bevorzugtes Original markieren.
+   - Kandidaten einzeln auswählen und Größe der möglichen Einsparung anzeigen.
+   - Entfernen ausschließlich nach erneuter Prüfung von Größe, Änderungszeit und SHA-256 sowie ausdrücklicher Bestätigung; symbolische Links und nicht erreichbare Datenträger werden abgewiesen.
+   - Zunächst eine wiederherstellbare Quarantäne beziehungsweise den Systempapierkorb bevorzugen; dauerhaftes Löschen bleibt eine gesonderte, deutlich gekennzeichnete Aktion.
+
+3. **Erweiterte Inhaltsindizierung**
+   - Text aus PDF- und ausgewählten Office-Dokumenten extrahieren; OCR für Bilder und Scans optional ergänzen.
+   - Jede Formatgruppe separat aktivierbar machen.
+   - Lesegrenzen pro Datei und pro Scan sowie ein Gesamtlimit für dauerhaft gespeicherten Indextext jeweils mit Unbegrenzt-Schalter anbieten.
+   - Extraktion lokal ausführen; externe KI-Dienste nur nach ausdrücklicher Freigabe verwenden.
+
+4. **Scan-Profile pro Datenträger**
+   - Globale Scan-Einstellungen optional je Datenträger überschreiben.
+   - Ausschlussmuster, Inhaltsindex, Bild-/EXIF-Analyse und weitere Scanoptionen in wiederverwendbaren Profilen bündeln.
+   - Vor jedem Scan das tatsächlich verwendete Profil anzeigen und in der Diagnose festhalten.
+
+5. **Versionierte GitHub-Releases**
+   - Freigegebene Versionen automatisch als GitHub-Release veröffentlichen.
+   - Portable Pakete für macOS ARM/Intel, Windows und Linux dauerhaft anhängen und mit SHA-256-Prüfsummen versehen.
+   - Entwicklungsbuilds und stabile Releases klar trennen; ein Release bleibt eine ausdrücklich gestartete Aktion.
+
+6. **Erweiterte Exporte und Berichte**
+   - Gefilterten Katalog zusätzlich als JSON exportieren.
+   - Archivvergleiche als maschinenlesbaren Bericht und druckbare Änderungsübersicht exportieren.
+   - Exportarten einzeln aktivierbar machen und ihre maximale Gesamtgröße jeweils mit Unbegrenzt-Schalter steuern.
+
+Für neue Funktionen gilt weiterhin: Aktivierung und Ressourcenlimits werden unter **Einstellungen** angeboten, wenn Dateien gelesen oder Daten dauerhaft im Vault gespeichert werden. Nicht verändernde Funktionen ohne eigenen Speicherverbrauch benötigen kein künstliches Speicherlimit.
+
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.
