@@ -13,6 +13,7 @@ let comparisonMode = 'list';
 let duplicateGroups = [];
 let duplicatePage = 1;
 const duplicatePageSize = 25;
+const duplicateSelections = new Map();
 let inspectedBackup = null;
 let currentScanDiagnostic = null;
 
@@ -1410,6 +1411,7 @@ async function findDuplicates() {
 		? `${result.groups.length.toLocaleString('de-DE')} Gruppen mit ${duplicateFiles.toLocaleString('de-DE')} Dateien gefunden · ${details}.`
 		: `Keine inhaltlich identischen Dateien gefunden · ${details}.`;
     duplicateGroups = result.groups;
+    duplicateSelections.clear();
     duplicatePage = 1;
     renderDuplicateGroups();
   } catch (error) {
@@ -1429,7 +1431,10 @@ function ensureDuplicateControls() {
   filter.placeholder = 'Datenträger oder Pfad filtern …';
   const pageLabel = document.createElement('span');
   pageLabel.id = 'duplicate-page-label';
-  toolbar.append(filter, pageLabel);
+  const selectionLabel = document.createElement('strong');
+  selectionLabel.id = 'duplicate-selection-label';
+  selectionLabel.textContent = '0 Dateien ausgewählt · 0 B mögliche Einsparung';
+  toolbar.append(filter, selectionLabel, pageLabel);
   $('#duplicate-results').before(toolbar);
   const pagination = document.createElement('div');
   pagination.className = 'duplicate-pagination';
@@ -1468,16 +1473,39 @@ function renderDuplicateGroups() {
     heading.append(title, meta);
     card.append(heading);
     for (const file of group.files) {
-      const entry = document.createElement('button');
-      entry.type = 'button';
-      entry.className = 'secondary duplicate-file';
+      const entry = document.createElement('div');
+      entry.className = `duplicate-file${file.preferred ? ' preferred' : ''}`;
+      const selection = document.createElement('input');
+      selection.type = 'checkbox';
+      selection.checked = duplicateSelections.get(group.hash)?.has(file.id) || false;
+      selection.disabled = file.preferred;
+      selection.title = file.preferred ? 'Das bevorzugte Original bleibt erhalten.' : 'Als möglichen Bereinigungskandidaten auswählen';
+      selection.addEventListener('change', () => toggleDuplicateSelection(group, file, selection));
+      const location = document.createElement('button');
+      location.type = 'button';
+      location.className = 'duplicate-location';
       const drive = document.createElement('span');
       drive.textContent = file.drive;
       const path = document.createElement('span');
       path.textContent = file.path;
       path.title = file.path;
-      entry.append(drive, path);
-      entry.addEventListener('click', () => openFileDialog({id: file.id, filename: file.filename, drive: file.drive, path: file.path, size: group.size, extension: '', mimeType: '', modified: ''}));
+      location.append(drive, path);
+      location.addEventListener('click', () => openFileDialog({id: file.id, filename: file.filename, drive: file.drive, path: file.path, size: group.size, extension: '', mimeType: '', modified: ''}));
+      const actions = document.createElement('div');
+      actions.className = 'duplicate-file-actions';
+      const reveal = document.createElement('button');
+      reveal.type = 'button';
+      reveal.className = 'secondary compact';
+      reveal.textContent = 'Anzeigen';
+      reveal.addEventListener('click', () => revealDuplicateFile(file));
+      const preferred = document.createElement('button');
+      preferred.type = 'button';
+      preferred.className = `secondary compact${file.preferred ? ' active' : ''}`;
+      preferred.textContent = file.preferred ? '★ Original' : '☆ Original';
+      preferred.title = 'Diesen Fundort als bevorzugtes Original speichern';
+      preferred.addEventListener('click', () => setDuplicatePreference(group, file));
+      actions.append(reveal, preferred);
+      entry.append(selection, location, actions);
       card.append(entry);
     }
     container.append(card);
@@ -1492,6 +1520,61 @@ function renderDuplicateGroups() {
   const pagination = document.querySelector('[data-role="duplicate-pagination"]');
   pagination.children[0].disabled = duplicatePage <= 1;
   pagination.children[1].disabled = duplicatePage >= pages;
+  renderDuplicateSelectionSummary();
+}
+
+function toggleDuplicateSelection(group, file, checkbox) {
+  let selected = duplicateSelections.get(group.hash);
+  if (!selected) {
+    selected = new Set();
+    duplicateSelections.set(group.hash, selected);
+  }
+  if (checkbox.checked) {
+    if (selected.size >= group.files.length - 1) {
+      checkbox.checked = false;
+      alert('Mindestens ein Fundort muss als Original erhalten bleiben.');
+      return;
+    }
+    selected.add(file.id);
+  } else {
+    selected.delete(file.id);
+  }
+  if (!selected.size) duplicateSelections.delete(group.hash);
+  renderDuplicateSelectionSummary();
+}
+
+function renderDuplicateSelectionSummary() {
+  let files = 0;
+  let bytes = 0;
+  for (const group of duplicateGroups) {
+    const count = duplicateSelections.get(group.hash)?.size || 0;
+    files += count;
+    bytes += count * group.size;
+  }
+  const label = $('#duplicate-selection-label');
+  if (label) label.textContent = `${files.toLocaleString('de-DE')} Dateien ausgewählt · ${formatBytes(bytes)} mögliche Einsparung`;
+}
+
+async function revealDuplicateFile(file) {
+  try {
+    await window.go.main.App.RevealFile(file.id);
+  } catch (error) {
+    $('#duplicate-status').textContent = `Fundort kann nicht angezeigt werden: ${error}`;
+  }
+}
+
+async function setDuplicatePreference(group, file) {
+  try {
+    await window.go.main.App.SetDuplicatePreference(group.hash, file.id);
+    for (const candidate of group.files) candidate.preferred = candidate.id === file.id;
+    const selected = duplicateSelections.get(group.hash);
+    selected?.delete(file.id);
+    if (selected && !selected.size) duplicateSelections.delete(group.hash);
+    renderDuplicateGroups();
+    $('#duplicate-status').textContent = `${file.drive} · ${file.path} ist jetzt das bevorzugte Original.`;
+  } catch (error) {
+    $('#duplicate-status').textContent = `Original konnte nicht markiert werden: ${error}`;
+  }
 }
 
 window.runtime.EventsOn('scan:progress', (event) => {

@@ -196,7 +196,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.41.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.42.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -556,6 +556,13 @@ func (a *App) FindDuplicates() (DuplicateResult, error) {
 	}
 	result.Groups, err = a.catalog.DuplicateGroups()
 	return result, err
+}
+
+func (a *App) SetDuplicatePreference(hash string, fileID int64) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.SetDuplicatePreference(hash, fileID)
 }
 
 func hashFile(path string) (string, int64, error) {

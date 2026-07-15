@@ -189,6 +189,62 @@ func TestFileHashSurvivesOnlyUnchangedRescan(t *testing.T) {
 	}
 }
 
+func TestDuplicatePreferenceSurvivesFileIDChange(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	modified := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	roots := make(map[string]string)
+	for index, volume := range []string{"duplicate-a", "duplicate-b"} {
+		roots[volume] = t.TempDir()
+		if err := catalog.ReplaceDriveScan(DriveScan{
+			Path: roots[volume], Label: volume, UUID: volume,
+			Files: []scanner.File{{Path: "same.bin", Filename: "same.bin", Size: 42, Modified: modified}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		result, err := catalog.Search("same.bin", "", "", 0, false, 50, 0)
+		if err != nil || len(result.Files) != index+1 {
+			t.Fatalf("search duplicate %d = %#v, %v", index, result, err)
+		}
+	}
+	hash := strings.Repeat("a", 64)
+	result, _ := catalog.Search("same.bin", "", "", 0, false, 50, 0)
+	for _, file := range result.Files {
+		if err := catalog.SaveFileHash(file.ID, hash); err != nil {
+			t.Fatal(err)
+		}
+	}
+	preferredID := result.Files[0].ID
+	if err := catalog.SetDuplicatePreference(hash, preferredID); err != nil {
+		t.Fatal(err)
+	}
+	preferredDrive := result.Files[0].Drive
+	if err := catalog.ReplaceDriveScan(DriveScan{
+		Path: roots[preferredDrive], Label: preferredDrive, UUID: preferredDrive,
+		Files: []scanner.File{{Path: "same.bin", Filename: "same.bin", Size: 42, Modified: modified}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := catalog.DuplicateGroups()
+	if err != nil || len(groups) != 1 || len(groups[0].Files) != 2 {
+		t.Fatalf("groups = %#v, %v", groups, err)
+	}
+	preferredPath := groups[0].Files[0].Path
+	found := false
+	currentPreferredID := int64(0)
+	for _, file := range groups[0].Files {
+		if file.Preferred {
+			found = file.Path == preferredPath && file.Drive == preferredDrive
+			currentPreferredID = file.ID
+		}
+	}
+	if !found || currentPreferredID == preferredID {
+		t.Fatalf("preferred duplicate missing: %#v", groups[0].Files)
+	}
+	if err := catalog.SetDuplicatePreference(strings.Repeat("b", 64), currentPreferredID); err == nil {
+		t.Fatal("mismatching duplicate hash accepted")
+	}
+}
+
 func TestProtectedSnapshotSurvivesCleanupAndDelete(t *testing.T) {
 	catalog := openMetadataTestCatalog(t)
 	root := t.TempDir()

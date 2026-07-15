@@ -8,6 +8,8 @@ Der Tab **Archiv** vergleicht den aktuellen Inhalt mit einem wählbaren frühere
 
 Die Duplikatprüfung kann in den Einstellungen vollständig deaktiviert werden. Ein Limit pro Kandidat und ein Gesamtbudget pro Prüflauf begrenzen das vom Datenträger gelesene Datenvolumen; beide Grenzen lassen sich unabhängig auf unbegrenzt setzen. Bereits vorhandene Prüfsummen werden erneut verwendet, solange der katalogisierte Dateistand unverändert bleibt. Die Originaldateien werden dabei niemals in den Vault kopiert.
 
+Ab Version 0.42.0-dev lassen sich Fundorte einer Duplikatgruppe direkt im Finder, Explorer oder Dateimanager anzeigen. Pro Gruppe kann ein bevorzugtes Original dauerhaft markiert werden; diese Zuordnung bleibt über erneute Scans hinweg anhand von Datenträger und relativem Pfad erhalten. Weitere Kandidaten können gefahrlos vorgemerkt werden, wobei VaultApp Anzahl und mögliche Speicherersparnis berechnet. Die Vormerkung allein verändert oder löscht keine Datei.
+
 ## Builds ohne lokale Toolchain
 
 1. Repository zu GitHub pushen.
@@ -67,9 +69,9 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
    - Relativen und vollständigen Pfad kopieren.
    - Nicht angeschlossene Datenträger eindeutig als offline kennzeichnen und Dateiaktionen dann deaktivieren.
 
-2. **Sichere Duplikatverwaltung**
-   - Fundorte direkt aus einer Duplikatgruppe öffnen und ein bevorzugtes Original markieren.
-   - Kandidaten einzeln auswählen und Größe der möglichen Einsparung anzeigen.
+2. **Sichere Duplikatverwaltung – Bedienung umgesetzt in 0.42.0-dev**
+   - Fundorte direkt aus einer Duplikatgruppe öffnen und ein bevorzugtes Original markieren – umgesetzt.
+   - Kandidaten einzeln auswählen und Größe der möglichen Einsparung anzeigen – umgesetzt.
    - Entfernen ausschließlich nach erneuter Prüfung von Größe, Änderungszeit und SHA-256 sowie ausdrücklicher Bestätigung; symbolische Links und nicht erreichbare Datenträger werden abgewiesen.
    - Zunächst eine wiederherstellbare Quarantäne beziehungsweise den Systempapierkorb bevorzugen; dauerhaftes Löschen bleibt eine gesonderte, deutlich gekennzeichnete Aktion.
 

@@ -46,10 +46,16 @@ main > *,
 
 .duplicate-toolbar {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) auto;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   margin-bottom: 12px;
+}
+
+#duplicate-selection-label {
+  color: #55d6be;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .duplicate-toolbar input {
@@ -87,20 +93,52 @@ main > *,
 
 .duplicate-file {
   display: grid !important;
-  grid-template-columns: minmax(100px, 160px) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   margin: 6px 0 0 !important;
   padding: 9px 11px !important;
   text-align: left;
+  border: 1px solid #293648;
+  border-radius: 9px;
+  background: #142131;
 }
 
-.duplicate-file span {
+.duplicate-file.preferred {
+  border-color: #2e786d;
+  background: #14302f;
+}
+
+.duplicate-location {
+  display: grid;
+  grid-template-columns: minmax(100px, 160px) minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #cbd7e4;
+  text-align: left;
+}
+
+.duplicate-location span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.duplicate-file span:first-child {
+.duplicate-location span:first-child {
+  color: #55d6be;
+}
+
+.duplicate-file-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.duplicate-file-actions .active {
+  border-color: #55d6be;
   color: #55d6be;
 }
 
@@ -159,7 +197,12 @@ main > *,
   }
 
   .duplicate-file {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .duplicate-file-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
   }
 
   .duplicate-group-head,

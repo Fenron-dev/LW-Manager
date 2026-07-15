@@ -49,6 +49,15 @@ CREATE INDEX IF NOT EXISTS idx_files_drive ON files(drive_id);
 CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension);
 CREATE INDEX IF NOT EXISTS idx_files_hash ON files(content_hash);
 
+CREATE TABLE IF NOT EXISTS duplicate_preferences (
+    content_hash TEXT PRIMARY KEY,
+    drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_duplicate_preferences_drive ON duplicate_preferences(drive_id);
+
 CREATE TABLE IF NOT EXISTS scan_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,

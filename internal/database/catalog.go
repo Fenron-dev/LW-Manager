@@ -136,10 +136,11 @@ type HashCandidate struct {
 }
 
 type DuplicateFile struct {
-	ID       int64  `json:"id"`
-	Filename string `json:"filename"`
-	Path     string `json:"path"`
-	Drive    string `json:"drive"`
+	ID        int64  `json:"id"`
+	Filename  string `json:"filename"`
+	Path      string `json:"path"`
+	Drive     string `json:"drive"`
+	Preferred bool   `json:"preferred"`
 }
 
 type DuplicateGroup struct {
@@ -497,8 +498,10 @@ func (c *Catalog) SaveFileHash(id int64, hash string) error {
 }
 
 func (c *Catalog) DuplicateGroups() ([]DuplicateGroup, error) {
-	rows, err := c.readDB.Query(`SELECT f.content_hash,f.size,f.id,f.filename,f.path,COALESCE(NULLIF(d.display_name,''),d.label)
+	rows, err := c.readDB.Query(`SELECT f.content_hash,f.size,f.id,f.filename,f.path,COALESCE(NULLIF(d.display_name,''),d.label),
+		CASE WHEN p.content_hash IS NULL THEN 0 ELSE 1 END
 		FROM files f JOIN drives d ON d.id=f.drive_id
+		LEFT JOIN duplicate_preferences p ON p.content_hash=f.content_hash AND p.drive_id=f.drive_id AND p.path=f.path
 		WHERE f.content_hash IN (SELECT content_hash FROM files WHERE content_hash IS NOT NULL AND content_hash<>'' GROUP BY content_hash HAVING COUNT(*)>1)
 		ORDER BY f.content_hash,COALESCE(NULLIF(d.display_name,''),d.label),f.path`)
 	if err != nil {
@@ -510,16 +513,40 @@ func (c *Catalog) DuplicateGroups() ([]DuplicateGroup, error) {
 		var hash string
 		var size, id int64
 		var filename, path, drive string
-		if err := rows.Scan(&hash, &size, &id, &filename, &path, &drive); err != nil {
+		var preferred bool
+		if err := rows.Scan(&hash, &size, &id, &filename, &path, &drive, &preferred); err != nil {
 			return nil, err
 		}
 		if len(groups) == 0 || groups[len(groups)-1].Hash != hash {
 			groups = append(groups, DuplicateGroup{Hash: hash, Size: size, Files: make([]DuplicateFile, 0, 2)})
 		}
 		group := &groups[len(groups)-1]
-		group.Files = append(group.Files, DuplicateFile{ID: id, Filename: filename, Path: path, Drive: drive})
+		group.Files = append(group.Files, DuplicateFile{ID: id, Filename: filename, Path: path, Drive: drive, Preferred: preferred})
 	}
 	return groups, rows.Err()
+}
+
+// SetDuplicatePreference stores the catalog location that should be retained for a hash.
+// The location is saved by drive and relative path because file IDs may change on a rescan.
+func (c *Catalog) SetDuplicatePreference(hash string, fileID int64) error {
+	hash = strings.ToLower(strings.TrimSpace(hash))
+	if len(hash) != sha256.Size*2 {
+		return fmt.Errorf("ungültige SHA-256-Prüfsumme")
+	}
+	var driveID int64
+	var path, actualHash string
+	if err := c.readDB.QueryRow(`SELECT drive_id,path,COALESCE(content_hash,'') FROM files WHERE id=?`, fileID).Scan(&driveID, &path, &actualHash); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("Datei wurde im aktuellen Katalog nicht gefunden")
+		}
+		return err
+	}
+	if !strings.EqualFold(actualHash, hash) {
+		return fmt.Errorf("Datei gehört nicht mehr zu dieser Duplikatgruppe; bitte erneut prüfen")
+	}
+	_, err := c.db.Exec(`INSERT INTO duplicate_preferences(content_hash,drive_id,path,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)
+		ON CONFLICT(content_hash) DO UPDATE SET drive_id=excluded.drive_id,path=excluded.path,updated_at=CURRENT_TIMESTAMP`, hash, driveID, path)
+	return err
 }
 
 func (c *Catalog) Drives() ([]Drive, error) {
