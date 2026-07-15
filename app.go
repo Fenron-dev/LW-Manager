@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -112,6 +113,8 @@ type AIProviderStatus struct {
 	Provider         string `json:"provider"`
 	Endpoint         string `json:"endpoint"`
 	Model            string `json:"model"`
+	VisionEnabled    bool   `json:"visionEnabled"`
+	VisionModel      string `json:"visionModel"`
 	CredentialStored bool   `json:"credentialStored"`
 }
 
@@ -170,7 +173,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.34.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.35.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -469,7 +472,7 @@ func (a *App) SaveSettings(settings appconfig.Settings) error {
 
 func (a *App) GetAIProviderStatus() (AIProviderStatus, error) {
 	settings := a.currentSettings()
-	status := AIProviderStatus{Enabled: settings.AIEnabled, Provider: settings.AIProvider, Endpoint: settings.AIEndpoint, Model: settings.AIModel}
+	status := AIProviderStatus{Enabled: settings.AIEnabled, Provider: settings.AIProvider, Endpoint: settings.AIEndpoint, Model: settings.AIModel, VisionEnabled: settings.AIVisionEnabled, VisionModel: settings.AIVisionModel}
 	path, err := a.aiCredentialPath()
 	if err != nil {
 		return status, err
@@ -584,6 +587,87 @@ func (a *App) AnalyzeFile(id int64) (ai.AnalysisResult, error) {
 	result.AnalyzedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := a.catalog.SaveAIAnalysis(input, database.AIAnalysis{Summary: result.Summary, Tags: result.Tags, Provider: result.Provider, Model: result.Model, InputBytes: result.InputBytes, InputTruncated: result.InputTruncated}); err != nil {
 		return ai.AnalysisResult{}, fmt.Errorf("KI-Analyse speichern: %w", err)
+	}
+	return result, nil
+}
+
+func (a *App) AnalyzeImage(id int64) (ai.AnalysisResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return ai.AnalysisResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	settings := a.currentSettings()
+	if !settings.AIEnabled || !settings.AIVisionEnabled {
+		return ai.AnalysisResult{}, fmt.Errorf("Vision-Analyse ist in den Einstellungen deaktiviert")
+	}
+	if !a.aiMu.TryLock() {
+		return ai.AnalysisResult{}, fmt.Errorf("es läuft bereits eine KI-Analyse")
+	}
+	defer a.aiMu.Unlock()
+	input, err := a.catalog.AIFileInput(id)
+	if err != nil {
+		return ai.AnalysisResult{}, fmt.Errorf("Bild für Vision-Analyse laden: %w", err)
+	}
+	source, err := a.catalog.SourceFile(id)
+	if err != nil {
+		return ai.AnalysisResult{}, err
+	}
+	info, err := os.Lstat(source.Path)
+	if err != nil {
+		return ai.AnalysisResult{}, fmt.Errorf("Bilddatei prüfen: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return ai.AnalysisResult{}, fmt.Errorf("Vision-Analyse verarbeitet nur reguläre Bilddateien, keine Verknüpfungen")
+	}
+	if info.Size() != source.Size || info.ModTime().UTC().Format(time.RFC3339Nano) != source.Modified {
+		return ai.AnalysisResult{}, fmt.Errorf("Bild wurde seit dem letzten Scan geändert; bitte Datenträger erneut scannen")
+	}
+	extension := strings.ToLower(filepath.Ext(source.Path))
+	if !strings.HasPrefix(input.MIMEType, "image/") && extension != ".jpg" && extension != ".jpeg" && extension != ".png" && extension != ".gif" && extension != ".webp" && extension != ".heic" && extension != ".heif" {
+		return ai.AnalysisResult{}, fmt.Errorf("Vision-Analyse unterstützt JPEG, PNG, GIF, WebP und HEIC/HEIF")
+	}
+	if !settings.AIVisionFileUnlimited && source.Size > int64(settings.AIVisionFileMB)<<20 {
+		return ai.AnalysisResult{}, fmt.Errorf("Bild ist größer als das Vision-Dateilimit von %d MB", settings.AIVisionFileMB)
+	}
+	if !settings.AIVisionTotalUnlimited && source.Size > int64(settings.AIVisionTotalMB)<<20 {
+		return ai.AnalysisResult{}, fmt.Errorf("Bild überschreitet das Vision-Gesamtlimit von %d MB", settings.AIVisionTotalMB)
+	}
+	cache, err := vault.AssetPath(a.root, "thumbnails")
+	if err != nil {
+		return ai.AnalysisResult{}, err
+	}
+	dataURL, err := thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("vision:%s:%d", source.Modified, source.Size), thumbnail.Limits{
+		ImageEnabled: true, HEICEnabled: true, ImageMB: settings.AIVisionFileMB, ImageUnlimited: settings.AIVisionFileUnlimited,
+		CacheMB: settings.ThumbnailCacheMB, CacheUnlimited: settings.ThumbnailCacheUnlimited, PDFMB: settings.PDFPreviewMB, VideoMB: settings.VideoPreviewMB,
+	})
+	if err != nil {
+		return ai.AnalysisResult{}, fmt.Errorf("Bild für Vision vorbereiten: %w", err)
+	}
+	parts := strings.SplitN(dataURL, ",", 2)
+	if len(parts) != 2 {
+		return ai.AnalysisResult{}, fmt.Errorf("Bildvorschau hat ein ungültiges Format")
+	}
+	imageBytes := base64.StdEncoding.DecodedLen(len(parts[1]))
+	if !settings.AIVisionTotalUnlimited && int64(imageBytes) > int64(settings.AIVisionTotalMB)<<20 {
+		return ai.AnalysisResult{}, fmt.Errorf("Aufbereitete Bilddaten überschreiten das Vision-Gesamtlimit")
+	}
+	credential, err := a.aiCredential(settings.AIProvider)
+	if err != nil {
+		return ai.AnalysisResult{}, err
+	}
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := ai.AnalyzeImage(ctx, ai.Config{Provider: settings.AIProvider, Endpoint: settings.AIEndpoint, Model: settings.AIVisionModel, TimeoutSeconds: settings.AITimeoutSeconds}, credential, ai.AnalysisRequest{
+		Filename: input.Filename, Path: input.Path, MIMEType: input.MIMEType, Size: input.Size, Width: input.Width, Height: input.Height, Metadata: input.Metadata,
+	}, dataURL)
+	if err != nil {
+		return ai.AnalysisResult{}, err
+	}
+	result.InputBytes = int64(imageBytes)
+	result.AnalyzedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := a.catalog.SaveAIAnalysis(input, database.AIAnalysis{Summary: result.Summary, Tags: result.Tags, Provider: result.Provider, Model: result.Model, ImageBytes: result.InputBytes, Vision: true}); err != nil {
+		return ai.AnalysisResult{}, fmt.Errorf("Vision-Analyse speichern: %w", err)
 	}
 	return result, nil
 }

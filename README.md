@@ -40,12 +40,14 @@ Unter **Einstellungen → KI-Anbieter** kann die optionale KI-Grundlage vollstä
 
 In den Dateidetails kann eine einzelne Datei ausdrücklich zur KI-Analyse gesendet werden. VaultApp überträgt Dateiname, Pfad, Typ, Größe, vorhandene Metadaten und – sofern zuvor über den Volltextindex erfasst – begrenzten Textinhalt. Originaldateien werden für die KI nicht zusätzlich geöffnet. Zusammenfassung, Schlagwörter, Anbieter, Modell und verwendete Textmenge werden im Katalog gespeichert; unveränderte Dateien behalten das Ergebnis bei einem erneuten Scan, während veraltete Ergebnisse geänderter oder entfernter Dateien bereinigt werden. Die erweiterte Bibliothekssuche findet auf Wunsch auch KI-Zusammenfassungen und -Schlagwörter.
 
+Die optionale Vision-Analyse ist davon getrennt und standardmäßig deaktiviert. Für JPEG, PNG, GIF, WebP sowie auf macOS HEIC/HEIF erscheint in den Dateidetails ein eigener Button. Erst nach diesem Klick erzeugt VaultApp eine verkleinerte Vorschau und sendet sie an das konfigurierte Vision-Modell. Modell, Quellbildlimit und maximales Bilddatenvolumen je Anfrage lassen sich separat einstellen; beide Grenzen besitzen einen Schalter für „Unbegrenzt“. Bei entfernten Endpunkten bestätigt der Benutzer die Übertragung vor jeder Analyse. Das Analyseergebnis kennzeichnet, ob Bild- oder Textdaten verwendet wurden.
+
 Unter macOS muss `VaultApp.app` im heruntergeladenen Paket bleiben: Der portable Vault-Ordner ist der Ordner direkt neben dem App-Bundle. Die Anwendung darf nicht einzeln nach `/Applications` verschoben werden, wenn Daten weiterhin auf dem externen Medium liegen sollen.
 
 Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet relativ zu ihrem eigenen Ordner, entfernt das Quarantäne-Attribut von der danebenliegenden `VaultApp.app`, setzt das interne Programm auf ausführbar und startet die App. App und Starterdatei müssen daher im selben Ordner bleiben.
 
 ## Roadmap
 
-- optionale Bildanalyse über Vision-Modelle
+Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erweiterungen werden anhand der Praxistests priorisiert.
 
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.

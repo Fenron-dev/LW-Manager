@@ -2,6 +2,8 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -12,6 +14,38 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return function(request)
+}
+
+func TestOllamaVisionSendsRawBase64Image(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var payload struct {
+			Messages []struct {
+				Images []string `json:"images"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil || len(payload.Messages) != 2 || len(payload.Messages[1].Images) != 1 || payload.Messages[1].Images[0] != "aW1hZ2U=" {
+			t.Errorf("unexpected payload: %+v, %v", payload, err)
+		}
+		return response(`{"message":{"content":"{\"summary\":\"Ein Bild.\",\"tags\":[\"Foto\"]}"}}`), nil
+	})}
+	result, err := analyzeImageWithClient(context.Background(), Config{Provider: "ollama", Endpoint: "http://127.0.0.1:11434", Model: "vision", TimeoutSeconds: 5}, "", AnalysisRequest{Filename: "foto.jpg"}, "data:image/jpeg;base64,aW1hZ2U=", client)
+	if err != nil || result.Summary != "Ein Bild." {
+		t.Fatalf("unexpected result: %+v, %v", result, err)
+	}
+}
+
+func TestOpenRouterVisionSendsImageURL(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil || !strings.Contains(fmt.Sprint(payload), "data:image/png;base64,aW1hZ2U=") {
+			t.Errorf("unexpected payload: %+v, %v", payload, err)
+		}
+		return response(`{"choices":[{"message":{"content":"{\"summary\":\"Eine Grafik.\",\"tags\":[\"Grafik\"]}"}}]}`), nil
+	})}
+	result, err := analyzeImageWithClient(context.Background(), Config{Provider: "openrouter", Endpoint: "https://openrouter.example/api/v1", Model: "auto", TimeoutSeconds: 5}, "token", AnalysisRequest{Filename: "grafik.png"}, "data:image/png;base64,aW1hZ2U=", client)
+	if err != nil || result.Summary != "Eine Grafik." {
+		t.Fatalf("unexpected result: %+v, %v", result, err)
+	}
 }
 
 func response(body string) *http.Response {

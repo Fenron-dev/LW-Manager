@@ -113,6 +113,8 @@ CREATE TABLE IF NOT EXISTS file_ai_analyses (
     model TEXT NOT NULL,
     input_bytes INTEGER NOT NULL DEFAULT 0,
     input_truncated INTEGER NOT NULL DEFAULT 0,
+	image_bytes INTEGER NOT NULL DEFAULT 0,
+	vision INTEGER NOT NULL DEFAULT 0,
     analyzed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (drive_id, path)
 );

@@ -165,7 +165,7 @@ func TestAIAnalysisSurvivesOnlyUnchangedRescan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := catalog.SaveAIAnalysis(input, AIAnalysis{Summary: "Eine Projektbeschreibung.", Tags: []string{" Projekt ", "Dokument", "projekt"}, Provider: "ollama", Model: "test", InputBytes: 13}); err != nil {
+	if err := catalog.SaveAIAnalysis(input, AIAnalysis{Summary: "Eine Projektbeschreibung.", Tags: []string{" Projekt ", "Dokument", "projekt"}, Provider: "ollama", Model: "test", ImageBytes: 123, Vision: true}); err != nil {
 		t.Fatal(err)
 	}
 	aiSearch, err := catalog.Search("Projektbeschreibung", "", "", 0, true, 50, 0)
@@ -177,7 +177,7 @@ func TestAIAnalysisSurvivesOnlyUnchangedRescan(t *testing.T) {
 		t.Fatalf("disabled AI search = %#v, %v", aiSearch, err)
 	}
 	details, err := catalog.FileDetails(input.ID)
-	if err != nil || details.AISummary == "" || !reflect.DeepEqual(details.AITags, []string{"Dokument", "Projekt"}) {
+	if err != nil || details.AISummary == "" || !details.AIVision || details.AIImageBytes != 123 || !reflect.DeepEqual(details.AITags, []string{"Dokument", "Projekt"}) {
 		t.Fatalf("details = %#v, %v", details, err)
 	}
 	scan(12, modified)

@@ -63,11 +63,17 @@ type Settings struct {
 	AITotalMB                int    `json:"aiTotalMB"`
 	AITotalUnlimited         bool   `json:"aiTotalUnlimited"`
 	AITimeoutSeconds         int    `json:"aiTimeoutSeconds"`
+	AIVisionEnabled          bool   `json:"aiVisionEnabled"`
+	AIVisionModel            string `json:"aiVisionModel"`
+	AIVisionFileMB           int    `json:"aiVisionFileMB"`
+	AIVisionFileUnlimited    bool   `json:"aiVisionFileUnlimited"`
+	AIVisionTotalMB          int    `json:"aiVisionTotalMB"`
+	AIVisionTotalUnlimited   bool   `json:"aiVisionTotalUnlimited"`
 }
 
 func Defaults() Settings {
 	return Settings{
-		Version: 9, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 10, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
@@ -76,6 +82,7 @@ func Defaults() Settings {
 		ImagePreviewEnabled: true, HEICPreviewEnabled: true, ImagePreviewMB: 100, ThumbnailCacheMB: 500, ThumbnailCacheUnlimited: true,
 		PDFPreviewMB: 40, VideoPreviewMB: 50,
 		AIProvider: "ollama", AIEndpoint: "http://127.0.0.1:11434", AIModel: "qwen2.5:1.5b", AIFileMB: 2, AITotalMB: 100, AITimeoutSeconds: 30,
+		AIVisionModel: "gemma3:4b", AIVisionFileMB: 25, AIVisionTotalMB: 100,
 	}
 }
 
@@ -91,6 +98,9 @@ func Load(path string) (Settings, error) {
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return Defaults(), fmt.Errorf("config.json: %w", err)
 	}
+	if settings.Version < 10 && settings.AIProvider == "openrouter" {
+		settings.AIVisionModel = "openrouter/auto"
+	}
 	if err := settings.Validate(); err != nil {
 		return Defaults(), err
 	}
@@ -101,7 +111,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 9
+	settings.Version = 10
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -187,6 +197,15 @@ func (settings Settings) Validate() error {
 	}
 	if settings.AITimeoutSeconds < 5 || settings.AITimeoutSeconds > 300 {
 		return fmt.Errorf("KI-Zeitlimit muss zwischen 5 und 300 Sekunden liegen")
+	}
+	if settings.AIVisionModel == "" {
+		return fmt.Errorf("Vision-Modell darf nicht leer sein")
+	}
+	if settings.AIVisionFileMB < 1 || settings.AIVisionFileMB > 1024 {
+		return fmt.Errorf("Vision-Dateilimit muss zwischen 1 und 1024 MB liegen")
+	}
+	if settings.AIVisionTotalMB < 1 || settings.AIVisionTotalMB > 1_000_000 {
+		return fmt.Errorf("Vision-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	return nil
 }

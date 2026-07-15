@@ -79,6 +79,8 @@ type FileResult struct {
 	AIAnalyzedAt string   `json:"aiAnalyzedAt"`
 	AIInputBytes int64    `json:"aiInputBytes"`
 	AITruncated  bool     `json:"aiTruncated"`
+	AIImageBytes int64    `json:"aiImageBytes"`
+	AIVision     bool     `json:"aiVision"`
 }
 
 type AIFileInput struct {
@@ -102,6 +104,8 @@ type AIAnalysis struct {
 	Model          string
 	InputBytes     int64
 	InputTruncated bool
+	ImageBytes     int64
+	Vision         bool
 }
 
 type SearchResult struct {
@@ -622,9 +626,9 @@ func (c *Catalog) FileDetails(id int64) (FileResult, error) {
 	var file FileResult
 	var tags string
 	err := c.readDB.QueryRow(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.modified_at,''),
-		COALESCE(a.summary,''),COALESCE(a.tags,'[]'),COALESCE(a.provider,''),COALESCE(a.model,''),COALESCE(a.analyzed_at,''),COALESCE(a.input_bytes,0),COALESCE(a.input_truncated,0)
+		COALESCE(a.summary,''),COALESCE(a.tags,'[]'),COALESCE(a.provider,''),COALESCE(a.model,''),COALESCE(a.analyzed_at,''),COALESCE(a.input_bytes,0),COALESCE(a.input_truncated,0),COALESCE(a.image_bytes,0),COALESCE(a.vision,0)
 		FROM files f JOIN drives d ON d.id=f.drive_id LEFT JOIN file_ai_analyses a ON a.drive_id=f.drive_id AND a.path=f.path AND a.source_size=f.size AND a.source_modified=COALESCE(f.modified_at,'') WHERE f.id=?`, id).
-		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified, &file.AISummary, &tags, &file.AIProvider, &file.AIModel, &file.AIAnalyzedAt, &file.AIInputBytes, &file.AITruncated)
+		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified, &file.AISummary, &tags, &file.AIProvider, &file.AIModel, &file.AIAnalyzedAt, &file.AIInputBytes, &file.AITruncated, &file.AIImageBytes, &file.AIVision)
 	if err == nil && json.Unmarshal([]byte(tags), &file.AITags) != nil {
 		file.AITags = []string{}
 	}
@@ -647,10 +651,10 @@ func (c *Catalog) SaveAIAnalysis(input AIFileInput, analysis AIAnalysis) error {
 	if err != nil {
 		return err
 	}
-	result, err := c.db.Exec(`INSERT INTO file_ai_analyses(drive_id,path,source_size,source_modified,summary,tags,provider,model,input_bytes,input_truncated,analyzed_at)
-		SELECT drive_id,path,size,COALESCE(modified_at,''),?,?,?,?,?,?,CURRENT_TIMESTAMP FROM files WHERE id=? AND drive_id=? AND path=? AND size=? AND COALESCE(modified_at,'')=?
-		ON CONFLICT(drive_id,path) DO UPDATE SET source_size=excluded.source_size,source_modified=excluded.source_modified,summary=excluded.summary,tags=excluded.tags,provider=excluded.provider,model=excluded.model,input_bytes=excluded.input_bytes,input_truncated=excluded.input_truncated,analyzed_at=CURRENT_TIMESTAMP`,
-		strings.TrimSpace(analysis.Summary), string(encoded), strings.TrimSpace(analysis.Provider), strings.TrimSpace(analysis.Model), analysis.InputBytes, analysis.InputTruncated, input.ID, input.DriveID, input.Path, input.Size, input.Modified)
+	result, err := c.db.Exec(`INSERT INTO file_ai_analyses(drive_id,path,source_size,source_modified,summary,tags,provider,model,input_bytes,input_truncated,image_bytes,vision,analyzed_at)
+		SELECT drive_id,path,size,COALESCE(modified_at,''),?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP FROM files WHERE id=? AND drive_id=? AND path=? AND size=? AND COALESCE(modified_at,'')=?
+		ON CONFLICT(drive_id,path) DO UPDATE SET source_size=excluded.source_size,source_modified=excluded.source_modified,summary=excluded.summary,tags=excluded.tags,provider=excluded.provider,model=excluded.model,input_bytes=excluded.input_bytes,input_truncated=excluded.input_truncated,image_bytes=excluded.image_bytes,vision=excluded.vision,analyzed_at=CURRENT_TIMESTAMP`,
+		strings.TrimSpace(analysis.Summary), string(encoded), strings.TrimSpace(analysis.Provider), strings.TrimSpace(analysis.Model), analysis.InputBytes, analysis.InputTruncated, analysis.ImageBytes, analysis.Vision, input.ID, input.DriveID, input.Path, input.Size, input.Modified)
 	if err != nil {
 		return err
 	}
@@ -942,6 +946,18 @@ func (c *Catalog) migrate() error {
 		}
 		if count == 0 {
 			if _, err := c.db.Exec("ALTER TABLE scan_snapshots ADD COLUMN " + name + " " + definition); err != nil {
+				return err
+			}
+		}
+	}
+	aiColumns := map[string]string{"image_bytes": "INTEGER NOT NULL DEFAULT 0", "vision": "INTEGER NOT NULL DEFAULT 0"}
+	for name, definition := range aiColumns {
+		var count int
+		if err := c.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('file_ai_analyses') WHERE name=?", name).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := c.db.Exec("ALTER TABLE file_ai_analyses ADD COLUMN " + name + " " + definition); err != nil {
 				return err
 			}
 		}

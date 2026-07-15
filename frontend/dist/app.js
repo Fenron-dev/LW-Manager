@@ -105,6 +105,12 @@ async function showSettings() {
     $('#setting-ai-total-limit').value = settings.aiTotalMB;
     $('#setting-ai-total-unlimited').checked = settings.aiTotalUnlimited;
     $('#setting-ai-timeout').value = settings.aiTimeoutSeconds;
+	$('#setting-ai-vision-enabled').checked = settings.aiVisionEnabled;
+	$('#setting-ai-vision-model').value = settings.aiVisionModel;
+	$('#setting-ai-vision-file-limit').value = settings.aiVisionFileMB;
+	$('#setting-ai-vision-file-unlimited').checked = settings.aiVisionFileUnlimited;
+	$('#setting-ai-vision-total-limit').value = settings.aiVisionTotalMB;
+	$('#setting-ai-vision-total-unlimited').checked = settings.aiVisionTotalUnlimited;
     $('#setting-backup-enabled').checked = settings.backupEnabled;
     $('#setting-backup-thumbnails').checked = settings.backupIncludeThumbnails;
     $('#setting-backup-file-limit').value = settings.backupFileMB;
@@ -287,7 +293,7 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 9,
+      version: 10,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       aiEnabled: $('#setting-ai-enabled').checked,
       aiProvider: $('#setting-ai-provider').value,
@@ -298,6 +304,12 @@ async function saveSettings() {
       aiTotalMB: Number($('#setting-ai-total-limit').value),
       aiTotalUnlimited: $('#setting-ai-total-unlimited').checked,
       aiTimeoutSeconds: Number($('#setting-ai-timeout').value),
+	  aiVisionEnabled: $('#setting-ai-vision-enabled').checked,
+	  aiVisionModel: $('#setting-ai-vision-model').value.trim(),
+	  aiVisionFileMB: Number($('#setting-ai-vision-file-limit').value),
+	  aiVisionFileUnlimited: $('#setting-ai-vision-file-unlimited').checked,
+	  aiVisionTotalMB: Number($('#setting-ai-vision-total-limit').value),
+	  aiVisionTotalUnlimited: $('#setting-ai-vision-total-unlimited').checked,
       backupEnabled: $('#setting-backup-enabled').checked,
       backupIncludeThumbnails: $('#setting-backup-thumbnails').checked,
       backupFileMB: Number($('#setting-backup-file-limit').value),
@@ -451,9 +463,13 @@ async function restoreBackup() {
 function syncSettingsControls() {
   const aiEnabled = $('#setting-ai-enabled').checked;
   const openRouter = $('#setting-ai-provider').value === 'openrouter';
-  ['#setting-ai-provider', '#setting-ai-endpoint', '#setting-ai-model', '#setting-ai-timeout', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited'].forEach((selector) => { $(selector).disabled = !aiEnabled; });
+  ['#setting-ai-provider', '#setting-ai-endpoint', '#setting-ai-model', '#setting-ai-timeout', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled'].forEach((selector) => { $(selector).disabled = !aiEnabled; });
   $('#setting-ai-file-limit').disabled = !aiEnabled || $('#setting-ai-file-unlimited').checked;
   $('#setting-ai-total-limit').disabled = !aiEnabled || $('#setting-ai-total-unlimited').checked;
+	const visionEnabled = aiEnabled && $('#setting-ai-vision-enabled').checked;
+	['#setting-ai-vision-model', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited'].forEach((selector) => { $(selector).disabled = !visionEnabled; });
+	$('#setting-ai-vision-file-limit').disabled = !visionEnabled || $('#setting-ai-vision-file-unlimited').checked;
+	$('#setting-ai-vision-total-limit').disabled = !visionEnabled || $('#setting-ai-vision-total-unlimited').checked;
   $('#ai-credential-fields').classList.toggle('hidden', !aiEnabled || !openRouter);
   $('#test-ai-provider-button').disabled = !aiEnabled;
   const backupEnabled = $('#setting-backup-enabled').checked;
@@ -1189,17 +1205,48 @@ async function openFileDialog(file) {
 
 function renderFileAI(file) {
   const button = $('#analyze-file-button');
+	const imageButton = $('#analyze-image-button');
   button.dataset.fileId = file.id || '';
+	imageButton.dataset.fileId = file.id || '';
   button.disabled = !file.id;
+	imageButton.disabled = !file.id;
+	const extension = (file.extension || '').toLowerCase();
+	const isImage = file.mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(extension);
+	imageButton.classList.toggle('hidden', !isImage);
   button.textContent = file.aiSummary ? 'Neu analysieren' : 'Datei analysieren';
+	imageButton.textContent = file.aiVision ? 'Bild neu analysieren' : 'Bild analysieren';
   $('#file-ai-summary').textContent = file.aiSummary || '';
   $('#file-ai-summary').classList.toggle('hidden', !file.aiSummary);
   const tags = $('#file-ai-tags'); tags.replaceChildren();
   (file.aiTags || []).forEach((tag) => { const badge = document.createElement('em'); badge.textContent = tag; tags.append(badge); });
   const available = Boolean(file.aiSummary);
   $('#file-ai-status').textContent = available ? 'Gespeicherte KI-Analyse' : 'Noch keine Analyse gespeichert.';
-  const input = file.aiInputBytes ? `${formatBytes(file.aiInputBytes)} Textinhalt${file.aiTruncated ? ' · durch Limit gekürzt' : ''}` : 'Nur Metadaten verwendet';
+	const input = file.aiVision ? `${formatBytes(file.aiImageBytes)} aufbereitete Bilddaten` : (file.aiInputBytes ? `${formatBytes(file.aiInputBytes)} Textinhalt${file.aiTruncated ? ' · durch Limit gekürzt' : ''}` : 'Nur Metadaten verwendet');
   $('#file-ai-meta').textContent = available ? `${file.aiProvider} · ${file.aiModel} · ${formatDate(file.aiAnalyzedAt)} · ${input}` : 'Die Analyse startet ausschließlich über den Button.';
+}
+
+async function analyzeCurrentImage() {
+	const button = $('#analyze-image-button');
+	const id = Number(button.dataset.fileId);
+	if (!id) return;
+	try {
+		const provider = await window.go.main.App.GetAIProviderStatus();
+		if (!provider.visionEnabled) { $('#file-ai-status').textContent = 'Bildanalyse ist in den Einstellungen deaktiviert.'; return; }
+		const endpoint = new URL(provider.endpoint);
+		const local = ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname);
+		if (!local && !confirm(`Eine verkleinerte Bildvorschau wird an ${provider.provider} unter ${provider.endpoint} übertragen und mit ${provider.visionModel} analysiert. Analyse starten?`)) return;
+	} catch (error) { $('#file-ai-status').textContent = `KI-Einstellungen konnten nicht geprüft werden: ${error}`; return; }
+	button.disabled = true;
+	$('#file-ai-status').textContent = 'Bild wird für die Vision-Analyse vorbereitet …';
+	try {
+		await window.go.main.App.AnalyzeImage(id);
+		const details = await window.go.main.App.GetFileDetails(id);
+		renderFileAI(details);
+		$('#file-ai-status').textContent = 'Bildanalyse gespeichert.';
+	} catch (error) {
+		$('#file-ai-status').textContent = `Bildanalyse fehlgeschlagen: ${error}`;
+		button.disabled = false;
+	}
 }
 
 async function analyzeCurrentFile() {
@@ -1344,15 +1391,16 @@ $('#restore-backup-button').addEventListener('click', restoreBackup);
 $('#save-ai-credential-button').addEventListener('click', saveAICredential);
 $('#clear-ai-credential-button').addEventListener('click', clearAICredential);
 $('#test-ai-provider-button').addEventListener('click', testAIProvider);
-['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#setting-ai-provider').addEventListener('change', () => {
   const provider = $('#setting-ai-provider').value;
   const endpoint = $('#setting-ai-endpoint');
   const model = $('#setting-ai-model');
-  if (provider === 'openrouter' && endpoint.value === 'http://127.0.0.1:11434') { endpoint.value = 'https://openrouter.ai/api/v1'; model.value = 'openrouter/auto'; }
-  if (provider === 'ollama' && endpoint.value === 'https://openrouter.ai/api/v1') { endpoint.value = 'http://127.0.0.1:11434'; model.value = 'qwen2.5:1.5b'; }
+	const visionModel = $('#setting-ai-vision-model');
+	if (provider === 'openrouter' && endpoint.value === 'http://127.0.0.1:11434') { endpoint.value = 'https://openrouter.ai/api/v1'; model.value = 'openrouter/auto'; visionModel.value = 'openrouter/auto'; }
+	if (provider === 'ollama' && endpoint.value === 'https://openrouter.ai/api/v1') { endpoint.value = 'http://127.0.0.1:11434'; model.value = 'qwen2.5:1.5b'; visionModel.value = 'gemma3:4b'; }
 });
 $('#drive-scan-button').addEventListener('click', startScan);
 $('#refresh-volumes-button').addEventListener('click', async () => {
@@ -1373,6 +1421,7 @@ $('#duplicate-button').addEventListener('click', findDuplicates);
 $('#save-drive-button').addEventListener('click', saveDrive);
 $('#add-location-button').addEventListener('click', addStorageLocation);
 $('#analyze-file-button').addEventListener('click', analyzeCurrentFile);
+$('#analyze-image-button').addEventListener('click', analyzeCurrentImage);
 $('#archive-back').addEventListener('click', () => { $('#snapshot-list').classList.remove('hidden'); $('#archive-browser').classList.add('hidden'); });
 $('#archive-search-button').addEventListener('click', () => loadArchiveFiles(1));
 $('#archive-search').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadArchiveFiles(1); } });

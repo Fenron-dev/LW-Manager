@@ -33,6 +33,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if settings.AIEnabled || settings.AIProvider != "ollama" || settings.AIEndpoint != "http://127.0.0.1:11434" || settings.AIModel == "" || settings.AIFileMB != 2 || settings.AITotalMB != 100 || settings.AITimeoutSeconds != 30 {
 		t.Fatalf("unexpected AI defaults: %+v", settings)
 	}
+	if settings.AIVisionEnabled || settings.AIVisionModel != "gemma3:4b" || settings.AIVisionFileMB != 25 || settings.AIVisionTotalMB != 100 {
+		t.Fatalf("unexpected AI vision defaults: %+v", settings)
+	}
 	settings.MaxSnapshots = 3
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)
@@ -57,6 +60,17 @@ func TestLoadAddsDefaultsToOlderConfig(t *testing.T) {
 	}
 }
 
+func TestLegacyOpenRouterConfigGetsCompatibleVisionModel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"version":9,"aiProvider":"openrouter","aiEndpoint":"https://openrouter.ai/api/v1","aiModel":"openrouter/auto"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := Load(path)
+	if err != nil || settings.AIVisionModel != "openrouter/auto" {
+		t.Fatalf("legacy OpenRouter migration: %+v, %v", settings, err)
+	}
+}
+
 func TestAISettingsValidation(t *testing.T) {
 	settings := Defaults()
 	settings.AIProvider = "unknown"
@@ -72,5 +86,10 @@ func TestAISettingsValidation(t *testing.T) {
 	settings.AIEndpoint = "file:///tmp/model"
 	if err := settings.Validate(); err == nil {
 		t.Fatal("expected endpoint validation error")
+	}
+	settings = Defaults()
+	settings.AIVisionFileMB = 0
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected vision limit validation error")
 	}
 }
