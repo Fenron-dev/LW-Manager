@@ -214,7 +214,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.45.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.46.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -1848,7 +1848,7 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 		Enabled: settings.EXIFEnabled, PerFileBytes: int64(settings.EXIFFileMB) << 20, TotalBytes: int64(settings.EXIFTotalMB) << 20,
 		PerFileUnlimited: settings.EXIFFileUnlimited, TotalUnlimited: settings.EXIFTotalUnlimited,
 	}, scanner.TextIndexOptions{
-		Enabled: settings.TextIndexEnabled, Documents: settings.TextDocumentsEnabled, PDF: settings.TextPDFEnabled, Data: settings.TextDataEnabled, SourceCode: settings.TextSourceEnabled,
+		Enabled: settings.TextIndexEnabled, Documents: settings.TextDocumentsEnabled, PDF: settings.TextPDFEnabled, Office: settings.TextOfficeEnabled, Data: settings.TextDataEnabled, SourceCode: settings.TextSourceEnabled,
 		PerFileBytes: int64(settings.TextFileMB) << 20, TotalBytes: int64(settings.TextTotalMB) << 20, StoredBytes: storedTextBytes,
 		PerFileUnlimited: settings.TextFileUnlimited, TotalUnlimited: settings.TextTotalUnlimited, StoredLimitEnabled: !settings.TextStoredUnlimited,
 	}, scanner.ExclusionOptions{

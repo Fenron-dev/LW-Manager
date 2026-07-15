@@ -160,6 +160,7 @@ async function showSettings() {
     $('#setting-text-enabled').checked = settings.textIndexEnabled;
     $('#setting-text-documents').checked = settings.textDocumentsEnabled;
     $('#setting-text-pdf').checked = settings.textPDFEnabled;
+    $('#setting-text-office').checked = settings.textOfficeEnabled;
     $('#setting-text-data').checked = settings.textDataEnabled;
     $('#setting-text-source').checked = settings.textSourceEnabled;
     $('#setting-text-file-limit').value = settings.textFileMB;
@@ -384,6 +385,7 @@ async function saveSettings() {
       textIndexEnabled: $('#setting-text-enabled').checked,
       textDocumentsEnabled: $('#setting-text-documents').checked,
       textPDFEnabled: $('#setting-text-pdf').checked,
+      textOfficeEnabled: $('#setting-text-office').checked,
       textDataEnabled: $('#setting-text-data').checked,
       textSourceEnabled: $('#setting-text-source').checked,
       textFileMB: Number($('#setting-text-file-limit').value),
@@ -561,7 +563,7 @@ function syncSettingsControls() {
   $('#setting-exif-file-limit').disabled = !exifEnabled || $('#setting-exif-file-unlimited').checked;
   $('#setting-exif-total-limit').disabled = !exifEnabled || $('#setting-exif-total-unlimited').checked;
   const textEnabled = $('#setting-text-enabled').checked;
-  ['#setting-text-documents', '#setting-text-pdf', '#setting-text-data', '#setting-text-source', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-text-stored-unlimited'].forEach((selector) => { $(selector).disabled = !textEnabled; });
+  ['#setting-text-documents', '#setting-text-pdf', '#setting-text-office', '#setting-text-data', '#setting-text-source', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-text-stored-unlimited'].forEach((selector) => { $(selector).disabled = !textEnabled; });
   $('#setting-text-file-limit').disabled = !textEnabled || $('#setting-text-file-unlimited').checked;
   $('#setting-text-total-limit').disabled = !textEnabled || $('#setting-text-total-unlimited').checked;
   $('#setting-text-stored-limit').disabled = !textEnabled || $('#setting-text-stored-unlimited').checked;

@@ -47,6 +47,7 @@ type Settings struct {
 	TextIndexEnabled                 bool     `json:"textIndexEnabled"`
 	TextDocumentsEnabled             bool     `json:"textDocumentsEnabled"`
 	TextPDFEnabled                   bool     `json:"textPDFEnabled"`
+	TextOfficeEnabled                bool     `json:"textOfficeEnabled"`
 	TextDataEnabled                  bool     `json:"textDataEnabled"`
 	TextSourceEnabled                bool     `json:"textSourceEnabled"`
 	TextFileMB                       int      `json:"textFileMB"`
@@ -100,7 +101,7 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 17, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 18, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{},
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
@@ -142,7 +143,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 17
+	settings.Version = 18
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err

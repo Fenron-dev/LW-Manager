@@ -27,7 +27,7 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if settings.EXIFEnabled || settings.EXIFFileMB != 8 || !settings.EXIFTotalUnlimited {
 		t.Fatalf("unexpected EXIF defaults: %+v", settings)
 	}
-	if settings.TextIndexEnabled || !settings.TextDocumentsEnabled || settings.TextPDFEnabled || !settings.TextDataEnabled || !settings.TextSourceEnabled || settings.TextFileMB != 2 || settings.TextTotalMB != 500 || settings.TextStoredMB != 500 || settings.TextStoredUnlimited {
+	if settings.TextIndexEnabled || !settings.TextDocumentsEnabled || settings.TextPDFEnabled || settings.TextOfficeEnabled || !settings.TextDataEnabled || !settings.TextSourceEnabled || settings.TextFileMB != 2 || settings.TextTotalMB != 500 || settings.TextStoredMB != 500 || settings.TextStoredUnlimited {
 		t.Fatalf("unexpected text index defaults: %+v", settings)
 	}
 	if !settings.ImagePreviewEnabled || !settings.HEICPreviewEnabled {

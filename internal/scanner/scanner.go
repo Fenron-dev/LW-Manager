@@ -55,12 +55,12 @@ type EXIFAnalysisOptions struct {
 }
 
 type TextIndexOptions struct {
-	Enabled                          bool
-	Documents, PDF, Data, SourceCode bool
-	PerFileBytes, TotalBytes         int64
-	StoredBytes                      int64
-	PerFileUnlimited, TotalUnlimited bool
-	StoredLimitEnabled               bool
+	Enabled                                  bool
+	Documents, PDF, Office, Data, SourceCode bool
+	PerFileBytes, TotalBytes                 int64
+	StoredBytes                              int64
+	PerFileUnlimited, TotalUnlimited         bool
+	StoredLimitEnabled                       bool
 }
 
 type ExclusionOptions struct {
@@ -236,6 +236,11 @@ func textPreview(path, extension string, options TextIndexOptions, totalRead, to
 		*totalStored += int64(len(text))
 		return text
 	}
+	if extension == ".docx" || extension == ".odt" {
+		text := extractOfficeText(data, extension, storedLimit)
+		*totalStored += int64(len(text))
+		return text
+	}
 	for _, value := range data {
 		if value == 0 {
 			return ""
@@ -275,6 +280,8 @@ func textExtensionEnabled(extension string, options TextIndexOptions) bool {
 	switch extension {
 	case ".pdf":
 		return options.PDF
+	case ".docx", ".odt":
+		return options.Office
 	case ".txt", ".md", ".markdown", ".log", ".csv", ".tsv", ".rtf":
 		return options.Documents
 	case ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf":
