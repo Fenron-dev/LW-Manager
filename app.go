@@ -58,6 +58,7 @@ type ScanResult struct {
 	Files           int             `json:"files"`
 	Bytes           int64           `json:"bytes"`
 	Skipped         int             `json:"skipped"`
+	Excluded        int             `json:"excluded"`
 	Issues          []scanner.Issue `json:"issues"`
 	IssuesTruncated bool            `json:"issuesTruncated"`
 	LogPath         string          `json:"logPath"`
@@ -72,6 +73,7 @@ type ScanDiagnostic struct {
 	Files           int             `json:"files"`
 	Bytes           int64           `json:"bytes"`
 	Skipped         int             `json:"skipped"`
+	Excluded        int             `json:"excluded"`
 	Issues          []scanner.Issue `json:"issues"`
 	IssuesTruncated bool            `json:"issuesTruncated"`
 	Error           string          `json:"error,omitempty"`
@@ -185,7 +187,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.39.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.40.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -1317,13 +1319,15 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 		Enabled: settings.TextIndexEnabled, Documents: settings.TextDocumentsEnabled, Data: settings.TextDataEnabled, SourceCode: settings.TextSourceEnabled,
 		PerFileBytes: int64(settings.TextFileMB) << 20, TotalBytes: int64(settings.TextTotalMB) << 20,
 		PerFileUnlimited: settings.TextFileUnlimited, TotalUnlimited: settings.TextTotalUnlimited,
+	}, scanner.ExclusionOptions{
+		Enabled: settings.ScanExclusionsEnabled, System: settings.ScanExcludeSystem, Development: settings.ScanExcludeDevelopment, Patterns: settings.ScanExcludedPatterns,
 	}, func(count int, path string) {
 		if count == 1 || count%250 == 0 {
 			wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": count, "path": path})
 		}
 	})
 	if err != nil {
-		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
+		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
 	}
 	totalSize, usedSize, _ := storage.Usage(selected)
@@ -1334,11 +1338,11 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 	}
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected})
 	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Vendor: identity.Vendor, Model: identity.Model, Serial: identity.Serial, DeviceType: identity.DeviceType, Archive: settings.ArchiveEnabled, MaxSnapshots: settings.MaxSnapshots}); err != nil {
-		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
+		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
 	}
-	diagnostic := ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated}
-	result := ScanResult{Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}
+	diagnostic := ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated}
+	result := ScanResult{Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}
 	result.LogPath = a.writeScanDiagnostic(diagnostic)
 	wailsruntime.EventsEmit(a.ctx, "scan:complete", result)
 	return result, nil

@@ -26,7 +26,7 @@ func TestScanCollectsMetadataAndSkipsVault(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(vault, "vault.db"), []byte("ignore"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	report, err := Scan(context.Background(), root, vault, ImageAnalysisOptions{Enabled: true, JPEG: true, PNG: true, GIF: true, PerFileBytes: 4 << 20, TotalUnlimited: true}, EXIFAnalysisOptions{}, TextIndexOptions{}, nil)
+	report, err := Scan(context.Background(), root, vault, ImageAnalysisOptions{Enabled: true, JPEG: true, PNG: true, GIF: true, PerFileBytes: 4 << 20, TotalUnlimited: true}, EXIFAnalysisOptions{}, TextIndexOptions{}, ExclusionOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestScanCollectsMetadataAndSkipsVault(t *testing.T) {
 
 func TestScanRejectsMissingRootInsteadOfReturningEmptySuccess(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "nicht-mehr-angeschlossen")
-	report, err := Scan(context.Background(), root, "", ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{}, nil)
+	report, err := Scan(context.Background(), root, "", ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{}, ExclusionOptions{}, nil)
 	if err == nil {
 		t.Fatalf("missing root returned success with %#v", report)
 	}
@@ -64,7 +64,7 @@ func TestScanCollectsOptionalEXIFMetadata(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "photo.jpg"), jpeg, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, EXIFAnalysisOptions{Enabled: true, PerFileBytes: 1 << 20, TotalUnlimited: true}, TextIndexOptions{}, nil)
+	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, EXIFAnalysisOptions{Enabled: true, PerFileBytes: 1 << 20, TotalUnlimited: true}, TextIndexOptions{}, ExclusionOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestScanCollectsImageDimensions(t *testing.T) {
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{Enabled: true, PNG: true, PerFileBytes: 4 << 20, TotalUnlimited: true}, EXIFAnalysisOptions{}, TextIndexOptions{}, nil)
+	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{Enabled: true, PNG: true, PerFileBytes: 4 << 20, TotalUnlimited: true}, EXIFAnalysisOptions{}, TextIndexOptions{}, ExclusionOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestScanCanDisableImageDimensions(t *testing.T) {
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{}, nil)
+	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{}, ExclusionOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestScanIndexesSelectedTextFormats(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "ignored.bin"), []byte("nicht indexieren"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{Enabled: true, Documents: true, PerFileBytes: 1 << 20, TotalUnlimited: true}, nil)
+	report, err := Scan(context.Background(), root, filepath.Join(root, "vault"), ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{Enabled: true, Documents: true, PerFileBytes: 1 << 20, TotalUnlimited: true}, ExclusionOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,5 +134,51 @@ func TestScanIndexesSelectedTextFormats(t *testing.T) {
 		if file.Extension == "bin" && file.TextContent != "" {
 			t.Fatalf("binary file indexed: %#v", file)
 		}
+	}
+}
+
+func TestScanExcludesConfiguredSystemDevelopmentAndCustomPaths(t *testing.T) {
+	root := t.TempDir()
+	files := []string{
+		"keep/report.txt",
+		".Trashes/deleted.txt",
+		"project/node_modules/package/index.js",
+		"project/cache-temp/value.bin",
+		"project/nested/secret.txt",
+	}
+	for _, name := range files {
+		full := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := Scan(context.Background(), root, "", ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{}, ExclusionOptions{
+		Enabled: true, System: true, Development: true, Patterns: []string{"cache-*", "project/nested/*"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Files) != 1 || report.Files[0].Path != "keep/report.txt" {
+		t.Fatalf("unexpected included files: %#v", report.Files)
+	}
+	if report.Excluded != 4 {
+		t.Fatalf("got %d excluded entries, want 4", report.Excluded)
+	}
+}
+
+func TestDisabledScanExclusionsKeepMatchingPaths(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "node_modules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "node_modules", "kept.js"), []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Scan(context.Background(), root, "", ImageAnalysisOptions{}, EXIFAnalysisOptions{}, TextIndexOptions{}, ExclusionOptions{Development: true}, nil)
+	if err != nil || len(report.Files) != 1 || report.Excluded != 0 {
+		t.Fatalf("disabled exclusions changed scan: %#v, %v", report, err)
 	}
 }

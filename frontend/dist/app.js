@@ -132,6 +132,10 @@ async function showSettings() {
     $('#setting-scan-diagnostic-file-unlimited').checked = settings.scanDiagnosticUnlimited;
     $('#setting-scan-diagnostics-total-limit').value = settings.scanDiagnosticsTotalMB;
     $('#setting-scan-diagnostics-unlimited').checked = settings.scanDiagnosticsUnlimited;
+	$('#setting-scan-exclusions-enabled').checked = settings.scanExclusionsEnabled;
+	$('#setting-scan-exclude-system').checked = settings.scanExcludeSystem;
+	$('#setting-scan-exclude-development').checked = settings.scanExcludeDevelopment;
+	$('#setting-scan-excluded-patterns').value = (settings.scanExcludedPatterns || []).join('\n');
     $('#setting-image-analysis-enabled').checked = settings.imageAnalysisEnabled;
     $('#setting-image-jpeg').checked = settings.imageJPEGEnabled;
     $('#setting-image-png').checked = settings.imagePNGEnabled;
@@ -183,7 +187,7 @@ function renderScanDiagnostic(diagnostic) {
   title.textContent = diagnostic.error ? 'Scan fehlgeschlagen' : `${Number(diagnostic.files || 0).toLocaleString('de-DE')} Dateien katalogisiert`;
   const meta = document.createElement('span');
   const duration = diagnostic.durationMs ? ` · ${(diagnostic.durationMs / 1000).toFixed(1)} s` : '';
-  meta.textContent = `${formatBytes(diagnostic.bytes || 0)} · ${Number(diagnostic.skipped || 0).toLocaleString('de-DE')} übersprungen${duration}`;
+  meta.textContent = `${formatBytes(diagnostic.bytes || 0)} · ${Number(diagnostic.skipped || 0).toLocaleString('de-DE')} fehlerhaft übersprungen · ${Number(diagnostic.excluded || 0).toLocaleString('de-DE')} durch Regeln ausgeschlossen${duration}`;
   const path = document.createElement('code');
   path.textContent = diagnostic.drive || '–';
   summary.append(title, meta, path);
@@ -237,7 +241,7 @@ async function loadScanDiagnostics() {
     const timestamp = diagnostic.finishedAt ? new Date(diagnostic.finishedAt).toLocaleString('de-DE') : 'Unbekannter Zeitpunkt';
     label.textContent = `${timestamp} · ${diagnostic.error ? 'Fehlgeschlagen' : `${Number(diagnostic.files).toLocaleString('de-DE')} Dateien`}`;
     const detail = document.createElement('span');
-    detail.textContent = `${diagnostic.drive} · ${Number(diagnostic.skipped).toLocaleString('de-DE')} übersprungen`;
+    detail.textContent = `${diagnostic.drive} · ${Number(diagnostic.skipped).toLocaleString('de-DE')} fehlerhaft · ${Number(diagnostic.excluded || 0).toLocaleString('de-DE')} ausgeschlossen`;
     button.append(label, detail);
     button.addEventListener('click', () => renderScanDiagnostic(diagnostic));
     container.append(button);
@@ -305,7 +309,7 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 13,
+      version: 14,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       aiEnabled: $('#setting-ai-enabled').checked,
       aiProvider: $('#setting-ai-provider').value,
@@ -343,6 +347,10 @@ async function saveSettings() {
       scanDiagnosticUnlimited: $('#setting-scan-diagnostic-file-unlimited').checked,
       scanDiagnosticsTotalMB: Number($('#setting-scan-diagnostics-total-limit').value),
       scanDiagnosticsUnlimited: $('#setting-scan-diagnostics-unlimited').checked,
+	  scanExclusionsEnabled: $('#setting-scan-exclusions-enabled').checked,
+	  scanExcludeSystem: $('#setting-scan-exclude-system').checked,
+	  scanExcludeDevelopment: $('#setting-scan-exclude-development').checked,
+	  scanExcludedPatterns: $('#setting-scan-excluded-patterns').value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
       imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked,
       imageJPEGEnabled: $('#setting-image-jpeg').checked,
       imagePNGEnabled: $('#setting-image-png').checked,
@@ -518,6 +526,8 @@ function syncSettingsControls() {
   $('#setting-scan-diagnostic-file-limit').disabled = !diagnosticsEnabled || $('#setting-scan-diagnostic-file-unlimited').checked;
   $('#setting-scan-diagnostics-unlimited').disabled = !diagnosticsEnabled;
   $('#setting-scan-diagnostics-total-limit').disabled = !diagnosticsEnabled || $('#setting-scan-diagnostics-unlimited').checked;
+	const exclusionsEnabled = $('#setting-scan-exclusions-enabled').checked;
+	['#setting-scan-exclude-system', '#setting-scan-exclude-development', '#setting-scan-excluded-patterns'].forEach((selector) => { $(selector).disabled = !exclusionsEnabled; });
   const analysisEnabled = $('#setting-image-analysis-enabled').checked;
   ['#setting-image-jpeg', '#setting-image-png', '#setting-image-gif', '#setting-image-heic', '#setting-image-header-unlimited', '#setting-image-scan-unlimited'].forEach((selector) => { $(selector).disabled = !analysisEnabled; });
   $('#setting-image-header-limit').disabled = !analysisEnabled || $('#setting-image-header-unlimited').checked;
@@ -613,7 +623,7 @@ async function runScan(scanAction, preparingMessage) {
     const result = await scanAction();
     if (!result.cancelled) {
       $('#scan-title').textContent = `${result.files.toLocaleString('de-DE')} Dateien katalogisiert`;
-      $('#scan-detail').textContent = `${formatBytes(result.bytes)} erfasst · ${result.skipped} Einträge übersprungen`;
+      $('#scan-detail').textContent = `${formatBytes(result.bytes)} erfasst · ${result.skipped} fehlerhaft übersprungen · ${result.excluded || 0} durch Regeln ausgeschlossen`;
       currentScanDiagnostic = result;
       $('#scan-report-button').classList.toggle('hidden', !result.logPath && !result.issues?.length);
       extensionsLoaded = false;
@@ -1463,7 +1473,7 @@ $('#restore-backup-button').addEventListener('click', restoreBackup);
 $('#save-ai-credential-button').addEventListener('click', saveAICredential);
 $('#clear-ai-credential-button').addEventListener('click', clearAICredential);
 $('#test-ai-provider-button').addEventListener('click', testAIProvider);
-['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-scan-exclusions-enabled', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#setting-ai-provider').addEventListener('change', () => {

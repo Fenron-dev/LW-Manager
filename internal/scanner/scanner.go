@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"mime"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ type Report struct {
 	Files           []File
 	Bytes           int64
 	Skipped         int
+	Excluded        int
 	Issues          []Issue
 	IssuesTruncated bool
 }
@@ -59,6 +61,14 @@ type TextIndexOptions struct {
 	PerFileUnlimited, TotalUnlimited bool
 }
 
+type ExclusionOptions struct {
+	Enabled, System, Development bool
+	Patterns                     []string
+}
+
+var systemExclusions = []string{".Spotlight-V100", ".Trashes", ".fseventsd", "$RECYCLE.BIN", "System Volume Information", "Thumbs.db", ".DS_Store"}
+var developmentExclusions = []string{".git", ".svn", ".hg", "node_modules", ".dart_tool", ".gradle", "Pods", "DerivedData", "__pycache__", "build", "dist", "target", ".next", ".nuxt"}
+
 type countingReader struct {
 	reader io.Reader
 	read   int64
@@ -70,7 +80,7 @@ func (reader *countingReader) Read(buffer []byte) (int, error) {
 	return count, err
 }
 
-func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions ImageAnalysisOptions, exifOptions EXIFAnalysisOptions, textOptions TextIndexOptions, progress func(int, string)) (Report, error) {
+func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions ImageAnalysisOptions, exifOptions EXIFAnalysisOptions, textOptions TextIndexOptions, exclusions ExclusionOptions, progress func(int, string)) (Report, error) {
 	root, err := filepath.Abs(sourceRoot)
 	if err != nil {
 		return Report{}, err
@@ -106,6 +116,14 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 			}
 			return nil
 		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr == nil && relative != "." && excludedByRule(filepath.ToSlash(relative), exclusions) {
+			report.Excluded++
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if entry.IsDir() {
 			if sameOrChild(path, excluded) {
 				return filepath.SkipDir
@@ -120,9 +138,8 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 			addIssue(path, "Dateiinformationen lesen", err)
 			return nil
 		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			addIssue(path, "Relativen Pfad bestimmen", err)
+		if relErr != nil {
+			addIssue(path, "Relativen Pfad bestimmen", relErr)
 			return nil
 		}
 		extension := strings.ToLower(filepath.Ext(entry.Name()))
@@ -141,6 +158,39 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 		return nil
 	})
 	return report, err
+}
+
+func excludedByRule(relative string, options ExclusionOptions) bool {
+	if !options.Enabled {
+		return false
+	}
+	patterns := make([]string, 0, len(options.Patterns)+len(systemExclusions)+len(developmentExclusions))
+	if options.System {
+		patterns = append(patterns, systemExclusions...)
+	}
+	if options.Development {
+		patterns = append(patterns, developmentExclusions...)
+	}
+	patterns = append(patterns, options.Patterns...)
+	segments := strings.Split(relative, "/")
+	for _, raw := range patterns {
+		pattern := strings.Trim(strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/")), "/")
+		if pattern == "" {
+			continue
+		}
+		if strings.Contains(pattern, "/") {
+			if matched, _ := path.Match(pattern, relative); matched {
+				return true
+			}
+			continue
+		}
+		for _, segment := range segments {
+			if matched, _ := path.Match(pattern, segment); matched {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func textPreview(path, extension string, options TextIndexOptions, totalRead *int64) string {

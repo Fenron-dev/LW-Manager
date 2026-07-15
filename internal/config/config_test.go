@@ -18,6 +18,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.ScanDiagnosticsEnabled || settings.ScanDiagnosticFileMB != 2 || settings.ScanDiagnosticsTotalMB != 50 {
 		t.Fatalf("unexpected scan diagnostic defaults: %+v", settings)
 	}
+	if settings.ScanExclusionsEnabled || !settings.ScanExcludeSystem || !settings.ScanExcludeDevelopment || len(settings.ScanExcludedPatterns) != 0 {
+		t.Fatalf("unexpected scan exclusion defaults: %+v", settings)
+	}
 	if !settings.ImageAnalysisEnabled || !settings.ImageJPEGEnabled || !settings.ImagePNGEnabled || !settings.ImageGIFEnabled || !settings.ImageHEICEnabled || settings.ImageHeaderMB != 4 {
 		t.Fatalf("unexpected image analysis defaults: %+v", settings)
 	}
@@ -52,6 +55,19 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	loaded, err := Load(path)
 	if err != nil || loaded.MaxSnapshots != 3 {
 		t.Fatalf("reloaded settings: %+v, %v", loaded, err)
+	}
+}
+
+func TestScanExclusionValidation(t *testing.T) {
+	settings := Defaults()
+	settings.ScanExcludedPatterns = []string{"project/["}
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected malformed scan pattern validation error")
+	}
+	settings = Defaults()
+	settings.ScanExcludedPatterns = []string{"../private"}
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected parent scan pattern validation error")
 	}
 }
 
