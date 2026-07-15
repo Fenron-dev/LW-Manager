@@ -51,6 +51,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.DuplicateQuarantineEnabled || settings.DuplicateQuarantineFileMB != 10_240 || settings.DuplicateQuarantineTotalMB != 102_400 || settings.DuplicateQuarantineFileUnlimited || settings.DuplicateQuarantineUnlimited {
 		t.Fatalf("unexpected duplicate quarantine defaults: %+v", settings)
 	}
+	if settings.DuplicatePermanentDeleteEnabled {
+		t.Fatal("permanent duplicate deletion must be disabled by default")
+	}
 	settings.MaxSnapshots = 3
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)

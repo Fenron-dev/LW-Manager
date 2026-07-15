@@ -12,6 +12,8 @@ Ab Version 0.42.0-dev lassen sich Fundorte einer Duplikatgruppe direkt im Finder
 
 Version 0.43.0-dev ergänzt eine wiederherstellbare Duplikat-Quarantäne. Vor jeder Verschiebung werden Pfadgrenzen, regulärer Dateityp, Größe, Änderungszeit und SHA-256 erneut geprüft; bevorzugte Originale, veränderte Dateien, symbolische Links und offline liegende Datenträger werden abgewiesen. Die Quarantäne ersetzt keine vorhandene Datei und lässt sich in den Einstellungen aktivieren sowie pro Datei und insgesamt begrenzen. Beide Grenzen besitzen einen Unbegrenzt-Schalter. Wiederhergestellte Dateien erscheinen nach einem erneuten Scan wieder im aktuellen Katalog.
 
+Das dauerhafte Löschen aus der Quarantäne ist ab Version 0.44.0-dev verfügbar und standardmäßig deaktiviert. Nach der Freischaltung in den Einstellungen muss für jede Datei zusätzlich exakt `DAUERHAFT LÖSCHEN` eingegeben werden. Unmittelbar vor dem Entfernen prüft VaultApp erneut, dass die Datei innerhalb des Quarantäneverzeichnisses liegt, kein symbolischer Link ist und weiterhin der gespeicherten Größe und SHA-256-Prüfsumme entspricht. Die Funktion gibt Speicher frei und erzeugt keine dauerhaften Daten; deshalb besitzt sie kein Speicherlimit.
+
 ## Builds ohne lokale Toolchain
 
 1. Repository zu GitHub pushen.
@@ -71,11 +73,11 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
    - Relativen und vollständigen Pfad kopieren.
    - Nicht angeschlossene Datenträger eindeutig als offline kennzeichnen und Dateiaktionen dann deaktivieren.
 
-2. **Sichere Duplikatverwaltung – Quarantäne umgesetzt in 0.43.0-dev**
+2. **Sichere Duplikatverwaltung – umgesetzt in 0.44.0-dev**
    - Fundorte direkt aus einer Duplikatgruppe öffnen und ein bevorzugtes Original markieren – umgesetzt.
    - Kandidaten einzeln auswählen und Größe der möglichen Einsparung anzeigen – umgesetzt.
    - Entfernen ausschließlich nach erneuter Prüfung von Größe, Änderungszeit und SHA-256 sowie ausdrücklicher Bestätigung; symbolische Links und nicht erreichbare Datenträger werden abgewiesen – umgesetzt.
-   - Wiederherstellbare Quarantäne – umgesetzt. Dauerhaftes Löschen bleibt eine gesonderte, noch offene und deutlich zu kennzeichnende Aktion.
+   - Wiederherstellbare Quarantäne und getrennt freizuschaltendes dauerhaftes Löschen mit Texteingabe – umgesetzt.
 
 3. **Erweiterte Inhaltsindizierung**
    - Text aus PDF- und ausgewählten Office-Dokumenten extrahieren; OCR für Bilder und Scans optional ergänzen.

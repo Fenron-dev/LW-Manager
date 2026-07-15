@@ -131,6 +131,7 @@ async function showSettings() {
     $('#setting-quarantine-file-unlimited').checked = settings.duplicateQuarantineFileUnlimited;
     $('#setting-quarantine-total-limit').value = settings.duplicateQuarantineTotalMB;
     $('#setting-quarantine-total-unlimited').checked = settings.duplicateQuarantineUnlimited;
+    $('#setting-permanent-delete-enabled').checked = settings.duplicatePermanentDeleteEnabled;
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
     $('#setting-scan-diagnostics-enabled').checked = settings.scanDiagnosticsEnabled;
@@ -351,6 +352,7 @@ async function saveSettings() {
       duplicateQuarantineFileUnlimited: $('#setting-quarantine-file-unlimited').checked,
       duplicateQuarantineTotalMB: Number($('#setting-quarantine-total-limit').value),
       duplicateQuarantineUnlimited: $('#setting-quarantine-total-unlimited').checked,
+      duplicatePermanentDeleteEnabled: $('#setting-permanent-delete-enabled').checked,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       scanDiagnosticsEnabled: $('#setting-scan-diagnostics-enabled').checked,
@@ -1646,7 +1648,32 @@ async function loadQuarantineItems() {
           restore.disabled = false;
         }
       });
-      row.append(details, restore);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'danger';
+      remove.textContent = 'Dauerhaft löschen';
+      remove.addEventListener('click', async () => {
+        const confirmation = prompt(`ACHTUNG: ${item.filename} wird unwiderruflich aus der Quarantäne gelöscht.\n\nZum Bestätigen exakt DAUERHAFT LÖSCHEN eingeben:`) || '';
+        if (confirmation !== 'DAUERHAFT LÖSCHEN') {
+          $('#quarantine-status').textContent = confirmation ? 'Bestätigungstext stimmt nicht überein. Es wurde nichts gelöscht.' : 'Löschen abgebrochen.';
+          return;
+        }
+        remove.disabled = true;
+        restore.disabled = true;
+        try {
+          await window.go.main.App.DeleteQuarantineItem(item.id, confirmation);
+          await loadQuarantineItems();
+          $('#quarantine-status').textContent = `${item.filename} wurde dauerhaft gelöscht.`;
+        } catch (error) {
+          $('#quarantine-status').textContent = `Dauerhaftes Löschen fehlgeschlagen: ${error}`;
+          remove.disabled = false;
+          restore.disabled = false;
+        }
+      });
+      const actions = document.createElement('div');
+      actions.className = 'quarantine-actions';
+      actions.append(restore, remove);
+      row.append(details, actions);
       container.append(row);
     }
   } catch (error) {

@@ -92,11 +92,12 @@ type Settings struct {
 	DuplicateQuarantineFileUnlimited bool     `json:"duplicateQuarantineFileUnlimited"`
 	DuplicateQuarantineTotalMB       int      `json:"duplicateQuarantineTotalMB"`
 	DuplicateQuarantineUnlimited     bool     `json:"duplicateQuarantineUnlimited"`
+	DuplicatePermanentDeleteEnabled  bool     `json:"duplicatePermanentDeleteEnabled"`
 }
 
 func Defaults() Settings {
 	return Settings{
-		Version: 15, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 16, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{},
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
@@ -138,7 +139,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 15
+	settings.Version = 16
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err

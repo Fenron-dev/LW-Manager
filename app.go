@@ -214,7 +214,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.43.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.44.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -714,17 +714,9 @@ func (a *App) RestoreQuarantineItem(id int64) error {
 	if err != nil {
 		return err
 	}
-	quarantined, err := vault.DataPath(a.root, filepath.FromSlash(item.QuarantinePath))
+	quarantined, err := a.verifiedQuarantineFile(item)
 	if err != nil {
 		return err
-	}
-	info, err := os.Lstat(quarantined)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != item.Size {
-		return fmt.Errorf("Quarantänedatei fehlt oder wurde verändert")
-	}
-	hash, _, err := hashFile(quarantined)
-	if err != nil || !strings.EqualFold(hash, item.Hash) {
-		return fmt.Errorf("Prüfsumme der Quarantänedatei stimmt nicht mehr")
 	}
 	destination, err := verifyRestoreDestination(root, item.OriginalPath)
 	if err != nil {
@@ -741,6 +733,63 @@ func (a *App) RestoreQuarantineItem(id int64) error {
 	}
 	_ = os.Remove(filepath.Dir(quarantined))
 	return nil
+}
+
+func (a *App) DeleteQuarantineItem(id int64, confirmation string) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if !a.currentSettings().DuplicatePermanentDeleteEnabled {
+		return fmt.Errorf("dauerhaftes Löschen ist in den Einstellungen deaktiviert")
+	}
+	if confirmation != "DAUERHAFT LÖSCHEN" {
+		return fmt.Errorf("Bestätigungstext stimmt nicht überein")
+	}
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
+	item, _, err := a.catalog.QuarantineItem(id)
+	if err != nil {
+		return err
+	}
+	quarantined, err := a.verifiedQuarantineFile(item)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(quarantined); err != nil {
+		return fmt.Errorf("Quarantänedatei dauerhaft löschen: %w", err)
+	}
+	if err := a.catalog.DeleteQuarantineRecord(id); err != nil {
+		return fmt.Errorf("Datei wurde gelöscht, aber der Quarantäne-Katalog konnte nicht bereinigt werden: %w", err)
+	}
+	_ = os.Remove(filepath.Dir(quarantined))
+	return nil
+}
+
+func (a *App) verifiedQuarantineFile(item database.QuarantineItem) (string, error) {
+	quarantineRoot, err := vault.DataPath(a.root, "quarantine")
+	if err != nil {
+		return "", err
+	}
+	quarantined, err := vault.DataPath(a.root, filepath.FromSlash(item.QuarantinePath))
+	if err != nil {
+		return "", err
+	}
+	relative, err := filepath.Rel(quarantineRoot, quarantined)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("Quarantänepfad verlässt das Quarantäneverzeichnis")
+	}
+	info, err := os.Lstat(quarantined)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != item.Size {
+		return "", fmt.Errorf("Quarantänedatei fehlt oder wurde verändert")
+	}
+	if err := verifyResolvedInside(quarantineRoot, quarantined); err != nil {
+		return "", fmt.Errorf("Quarantänepfad ist unsicher: %w", err)
+	}
+	hash, _, err := hashFile(quarantined)
+	if err != nil || !strings.EqualFold(hash, item.Hash) {
+		return "", fmt.Errorf("Prüfsumme der Quarantänedatei stimmt nicht mehr")
+	}
+	return quarantined, nil
 }
 
 func verifyRestoreDestination(root, relative string) (string, error) {

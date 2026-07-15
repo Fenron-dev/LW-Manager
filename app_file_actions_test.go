@@ -84,6 +84,13 @@ func TestQuarantineAndRestoreDuplicate(t *testing.T) {
 	if result.Total != 1 {
 		t.Fatalf("catalog still contains quarantined file: %#v", result)
 	}
+	if err := app.DeleteQuarantineItem(items[0].ID, "DAUERHAFT LÖSCHEN"); err == nil || !strings.Contains(err.Error(), "deaktiviert") {
+		t.Fatalf("disabled permanent deletion accepted: %v", err)
+	}
+	app.settings.DuplicatePermanentDeleteEnabled = true
+	if err := app.DeleteQuarantineItem(items[0].ID, "LÖSCHEN"); err == nil || !strings.Contains(err.Error(), "Bestätigung") {
+		t.Fatalf("invalid permanent deletion confirmation accepted: %v", err)
+	}
 	if err := app.RestoreQuarantineItem(items[0].ID); err != nil {
 		t.Fatal(err)
 	}
@@ -94,6 +101,41 @@ func TestQuarantineAndRestoreDuplicate(t *testing.T) {
 	items, err = app.GetQuarantineItems()
 	if err != nil || len(items) != 0 {
 		t.Fatalf("quarantine not empty: %#v, %v", items, err)
+	}
+
+	files = files[:0]
+	for _, name := range []string{"original.bin", "candidate.bin"} {
+		info, statErr := os.Stat(filepath.Join(sourceRoot, name))
+		if statErr != nil {
+			t.Fatal(statErr)
+		}
+		files = append(files, scanner.File{Path: name, Filename: name, Size: info.Size(), Modified: info.ModTime()})
+	}
+	if err := catalog.ReplaceDriveScan(database.DriveScan{Path: sourceRoot, Label: "DUPLICATES", UUID: "duplicate-volume", Files: files}); err != nil {
+		t.Fatal(err)
+	}
+	result, _ = catalog.Search("", "", "", 0, false, 50, 0)
+	for _, file := range result.Files {
+		if err := catalog.SaveFileHash(file.ID, hash); err != nil {
+			t.Fatal(err)
+		}
+		if file.Filename == "candidate.bin" {
+			candidateID = file.ID
+		}
+	}
+	if _, err := app.QuarantineDuplicates([]DuplicateSelection{{Hash: hash, FileID: candidateID}}); err != nil {
+		t.Fatal(err)
+	}
+	items, _ = app.GetQuarantineItems()
+	if len(items) != 1 {
+		t.Fatalf("second quarantine = %#v", items)
+	}
+	if err := app.DeleteQuarantineItem(items[0].ID, "DAUERHAFT LÖSCHEN"); err != nil {
+		t.Fatal(err)
+	}
+	items, _ = app.GetQuarantineItems()
+	if len(items) != 0 {
+		t.Fatalf("permanently deleted item remains: %#v", items)
 	}
 }
 

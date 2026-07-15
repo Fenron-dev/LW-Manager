@@ -179,6 +179,15 @@ main > *,
   white-space: nowrap;
 }
 
+.quarantine-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.danger-toggle {
+  color: #ff9ea4;
+}
+
 @media (max-width: 1200px) {
   main {
     padding: 32px 24px;
@@ -237,6 +246,10 @@ main > *,
 
   .quarantine-item {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .quarantine-actions {
+    justify-content: flex-end;
   }
 
   .duplicate-group-head,
