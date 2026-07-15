@@ -120,6 +120,11 @@ async function showSettings() {
     $('#setting-catalog-export-enabled').checked = settings.catalogExportEnabled;
     $('#setting-catalog-export-limit').value = settings.catalogExportMaxMB;
     $('#setting-catalog-export-unlimited').checked = settings.catalogExportUnlimited;
+    $('#setting-duplicate-enabled').checked = settings.duplicateCheckEnabled;
+    $('#setting-duplicate-file-limit').value = settings.duplicateFileMB;
+    $('#setting-duplicate-file-unlimited').checked = settings.duplicateFileUnlimited;
+    $('#setting-duplicate-total-limit').value = settings.duplicateTotalMB;
+    $('#setting-duplicate-total-unlimited').checked = settings.duplicateTotalUnlimited;
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
     $('#setting-scan-diagnostics-enabled').checked = settings.scanDiagnosticsEnabled;
@@ -296,7 +301,7 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 11,
+      version: 12,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       aiEnabled: $('#setting-ai-enabled').checked,
       aiProvider: $('#setting-ai-provider').value,
@@ -322,6 +327,11 @@ async function saveSettings() {
       catalogExportEnabled: $('#setting-catalog-export-enabled').checked,
       catalogExportMaxMB: Number($('#setting-catalog-export-limit').value),
       catalogExportUnlimited: $('#setting-catalog-export-unlimited').checked,
+      duplicateCheckEnabled: $('#setting-duplicate-enabled').checked,
+      duplicateFileMB: Number($('#setting-duplicate-file-limit').value),
+      duplicateFileUnlimited: $('#setting-duplicate-file-unlimited').checked,
+      duplicateTotalMB: Number($('#setting-duplicate-total-limit').value),
+      duplicateTotalUnlimited: $('#setting-duplicate-total-unlimited').checked,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       scanDiagnosticsEnabled: $('#setting-scan-diagnostics-enabled').checked,
@@ -490,6 +500,11 @@ function syncSettingsControls() {
   const catalogExportEnabled = $('#setting-catalog-export-enabled').checked;
   $('#setting-catalog-export-unlimited').disabled = !catalogExportEnabled;
   $('#setting-catalog-export-limit').disabled = !catalogExportEnabled || $('#setting-catalog-export-unlimited').checked;
+  const duplicateEnabled = $('#setting-duplicate-enabled').checked;
+  $('#setting-duplicate-file-unlimited').disabled = !duplicateEnabled;
+  $('#setting-duplicate-file-limit').disabled = !duplicateEnabled || $('#setting-duplicate-file-unlimited').checked;
+  $('#setting-duplicate-total-unlimited').disabled = !duplicateEnabled;
+  $('#setting-duplicate-total-limit').disabled = !duplicateEnabled || $('#setting-duplicate-total-unlimited').checked;
   const diagnosticsEnabled = $('#setting-scan-diagnostics-enabled').checked;
   $('#setting-scan-diagnostic-file-unlimited').disabled = !diagnosticsEnabled;
   $('#setting-scan-diagnostic-file-limit').disabled = !diagnosticsEnabled || $('#setting-scan-diagnostic-file-unlimited').checked;
@@ -1324,9 +1339,10 @@ async function findDuplicates() {
   try {
     const result = await window.go.main.App.FindDuplicates();
     const duplicateFiles = result.groups.reduce((sum, group) => sum + group.files.length, 0);
+		const details = `${formatBytes(result.bytes)} gelesen${result.limited ? ` · ${result.limited.toLocaleString('de-DE')} durch Limits ausgelassen` : ''}${result.skipped ? ` · ${result.skipped.toLocaleString('de-DE')} nicht erreichbar` : ''}`;
     $('#duplicate-status').textContent = result.groups.length
-      ? `${result.groups.length.toLocaleString('de-DE')} Gruppen mit ${duplicateFiles.toLocaleString('de-DE')} Dateien gefunden${result.skipped ? ` · ${result.skipped} nicht erreichbar` : ''}.`
-      : `Keine inhaltlich identischen Dateien gefunden${result.skipped ? ` · ${result.skipped} nicht erreichbar` : ''}.`;
+		? `${result.groups.length.toLocaleString('de-DE')} Gruppen mit ${duplicateFiles.toLocaleString('de-DE')} Dateien gefunden · ${details}.`
+		: `Keine inhaltlich identischen Dateien gefunden · ${details}.`;
     duplicateGroups = result.groups;
     duplicatePage = 1;
     renderDuplicateGroups();
@@ -1433,7 +1449,7 @@ $('#restore-backup-button').addEventListener('click', restoreBackup);
 $('#save-ai-credential-button').addEventListener('click', saveAICredential);
 $('#clear-ai-credential-button').addEventListener('click', clearAICredential);
 $('#test-ai-provider-button').addEventListener('click', testAIProvider);
-['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#setting-ai-provider').addEventListener('change', () => {

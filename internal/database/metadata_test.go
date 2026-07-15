@@ -156,6 +156,35 @@ func TestManualFileTagsSurviveRescanAndFilterLibrary(t *testing.T) {
 	}
 }
 
+func TestFileHashSurvivesOnlyUnchangedRescan(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	root := t.TempDir()
+	modified := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	scan := func(size int64, changed time.Time) {
+		t.Helper()
+		if err := catalog.ReplaceDriveScan(DriveScan{Path: root, Label: "HASH", UUID: "hash-volume", Files: []scanner.File{{Path: "same.bin", Filename: "same.bin", Size: size, Modified: changed}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scan(12, modified)
+	result, err := catalog.Search("same.bin", "", "", 0, false, 50, 0)
+	if err != nil || len(result.Files) != 1 {
+		t.Fatalf("search hash file = %#v, %v", result, err)
+	}
+	if err := catalog.SaveFileHash(result.Files[0].ID, "stored-hash"); err != nil {
+		t.Fatal(err)
+	}
+	scan(12, modified)
+	var hash string
+	if err := catalog.db.QueryRow("SELECT content_hash FROM files WHERE path='same.bin'").Scan(&hash); err != nil || hash != "stored-hash" {
+		t.Fatalf("unchanged hash = %q, %v", hash, err)
+	}
+	scan(13, modified.Add(time.Minute))
+	if err := catalog.db.QueryRow("SELECT content_hash FROM files WHERE path='same.bin'").Scan(&hash); err != nil || hash != "" {
+		t.Fatalf("changed hash = %q, %v", hash, err)
+	}
+}
+
 func TestProtectedSnapshotSurvivesCleanupAndDelete(t *testing.T) {
 	catalog := openMetadataTestCatalog(t)
 	root := t.TempDir()

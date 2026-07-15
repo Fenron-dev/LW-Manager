@@ -132,6 +132,8 @@ type DuplicateResult struct {
 	Groups  []database.DuplicateGroup `json:"groups"`
 	Hashed  int                       `json:"hashed"`
 	Skipped int                       `json:"skipped"`
+	Limited int                       `json:"limited"`
+	Bytes   int64                     `json:"bytes"`
 }
 
 type LibraryResult struct {
@@ -183,7 +185,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.37.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.38.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -500,6 +502,12 @@ func (a *App) FindDuplicates() (DuplicateResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return DuplicateResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
+	settings := a.currentSettings()
+	if !settings.DuplicateCheckEnabled {
+		return DuplicateResult{}, fmt.Errorf("Duplikatprüfung ist in den Einstellungen deaktiviert")
+	}
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
 	candidates, err := a.catalog.HashCandidates()
 	if err != nil {
 		return DuplicateResult{}, err
@@ -507,7 +515,13 @@ func (a *App) FindDuplicates() (DuplicateResult, error) {
 	result := DuplicateResult{}
 	for index, candidate := range candidates {
 		if candidate.Hash == "" {
-			hash, hashErr := hashFile(candidate.SourcePath)
+			if (!settings.DuplicateFileUnlimited && candidate.Size > int64(settings.DuplicateFileMB)<<20) ||
+				(!settings.DuplicateTotalUnlimited && result.Bytes+candidate.Size > int64(settings.DuplicateTotalMB)<<20) {
+				result.Limited++
+				continue
+			}
+			hash, bytesRead, hashErr := hashFile(candidate.SourcePath)
+			result.Bytes += bytesRead
 			if hashErr != nil {
 				result.Skipped++
 				continue
@@ -525,17 +539,18 @@ func (a *App) FindDuplicates() (DuplicateResult, error) {
 	return result, err
 }
 
-func hashFile(path string) (string, error) {
+func hashFile(path string) (string, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer file.Close()
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
+	bytesRead, err := io.Copy(hash, file)
+	if err != nil {
+		return "", bytesRead, err
 	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return hex.EncodeToString(hash.Sum(nil)), bytesRead, nil
 }
 
 func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note string, tags []string) error {

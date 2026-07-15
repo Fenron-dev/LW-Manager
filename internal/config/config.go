@@ -72,11 +72,16 @@ type Settings struct {
 	CatalogExportEnabled     bool   `json:"catalogExportEnabled"`
 	CatalogExportMaxMB       int    `json:"catalogExportMaxMB"`
 	CatalogExportUnlimited   bool   `json:"catalogExportUnlimited"`
+	DuplicateCheckEnabled    bool   `json:"duplicateCheckEnabled"`
+	DuplicateFileMB          int    `json:"duplicateFileMB"`
+	DuplicateFileUnlimited   bool   `json:"duplicateFileUnlimited"`
+	DuplicateTotalMB         int    `json:"duplicateTotalMB"`
+	DuplicateTotalUnlimited  bool   `json:"duplicateTotalUnlimited"`
 }
 
 func Defaults() Settings {
 	return Settings{
-		Version: 11, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 12, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
 		ImageHeaderMB: 4, ImageScanBudgetMB: 256, ImageScanBudgetUnlimited: true,
@@ -87,6 +92,7 @@ func Defaults() Settings {
 		AIProvider: "ollama", AIEndpoint: "http://127.0.0.1:11434", AIModel: "qwen2.5:1.5b", AIFileMB: 2, AITotalMB: 100, AITimeoutSeconds: 30,
 		AIVisionModel: "gemma3:4b", AIVisionFileMB: 25, AIVisionTotalMB: 100,
 		CatalogExportEnabled: true, CatalogExportMaxMB: 100,
+		DuplicateCheckEnabled: true, DuplicateFileMB: 1024, DuplicateTotalMB: 2048,
 	}
 }
 
@@ -115,7 +121,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 11
+	settings.Version = 12
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -213,6 +219,12 @@ func (settings Settings) Validate() error {
 	}
 	if settings.CatalogExportMaxMB < 1 || settings.CatalogExportMaxMB > 1_000_000 {
 		return fmt.Errorf("Katalogexport-Limit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.DuplicateFileMB < 1 || settings.DuplicateFileMB > 1_000_000 {
+		return fmt.Errorf("Duplikat-Dateilimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.DuplicateTotalMB < 1 || settings.DuplicateTotalMB > 1_000_000 {
+		return fmt.Errorf("Duplikat-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	return nil
 }

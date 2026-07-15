@@ -1138,6 +1138,32 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 	if err = tx.QueryRow("SELECT COUNT(*),COALESCE(SUM(size),0) FROM files WHERE drive_id=?", driveID).Scan(&previousCount, &previousBytes); err != nil {
 		return err
 	}
+	type previousHash struct {
+		size     int64
+		modified string
+		hash     string
+	}
+	previousHashes := make(map[string]previousHash)
+	hashRows, err := tx.Query(`SELECT path,size,COALESCE(modified_at,''),content_hash FROM files WHERE drive_id=? AND content_hash IS NOT NULL AND content_hash<>''`, driveID)
+	if err != nil {
+		return err
+	}
+	for hashRows.Next() {
+		var path string
+		var value previousHash
+		if err := hashRows.Scan(&path, &value.size, &value.modified, &value.hash); err != nil {
+			_ = hashRows.Close()
+			return err
+		}
+		previousHashes[path] = value
+	}
+	if err := hashRows.Err(); err != nil {
+		_ = hashRows.Close()
+		return err
+	}
+	if err := hashRows.Close(); err != nil {
+		return err
+	}
 	if previousCount > 0 && scan.Archive {
 		result, err := tx.Exec("INSERT INTO scan_snapshots(drive_id,file_count,total_bytes) VALUES(?,?,?)", driveID, previousCount, previousBytes)
 		if err != nil {
@@ -1161,7 +1187,7 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 	if _, err = tx.Exec("DELETE FROM files WHERE drive_id=?", driveID); err != nil {
 		return err
 	}
-	statement, err := tx.Prepare(`INSERT INTO files(drive_id,path,filename,extension,size,width,height,mime_type,metadata,text_content,created_at,modified_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+	statement, err := tx.Prepare(`INSERT INTO files(drive_id,path,filename,extension,size,width,height,mime_type,metadata,text_content,created_at,modified_at,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
@@ -1171,7 +1197,12 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 		if !file.CreatedAt.IsZero() {
 			created = file.CreatedAt.UTC().Format(time.RFC3339Nano)
 		}
-		if _, err = statement.Exec(driveID, file.Path, file.Filename, file.Extension, file.Size, file.Width, file.Height, file.MIMEType, file.Metadata, file.TextContent, created, file.Modified.UTC().Format(time.RFC3339Nano)); err != nil {
+		modified := file.Modified.UTC().Format(time.RFC3339Nano)
+		contentHash := ""
+		if previous, exists := previousHashes[file.Path]; exists && previous.size == file.Size && previous.modified == modified {
+			contentHash = previous.hash
+		}
+		if _, err = statement.Exec(driveID, file.Path, file.Filename, file.Extension, file.Size, file.Width, file.Height, file.MIMEType, file.Metadata, file.TextContent, created, modified, contentHash); err != nil {
 			return err
 		}
 	}

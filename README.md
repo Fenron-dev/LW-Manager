@@ -6,6 +6,8 @@ Bei einem erneuten Scan ersetzt VaultApp den aktiven Katalog vollständig durch 
 
 Der Tab **Archiv** vergleicht den aktuellen Inhalt mit einem wählbaren früheren Stand und markiert neue, entfernte, geänderte und unveränderte Pfade farblich. In der Bibliothek kann eine optionale Duplikatprüfung gestartet werden. Sie bildet zunächst Größenkandidaten und liest nur diese Dateien für einen SHA-256-Inhaltsvergleich.
 
+Die Duplikatprüfung kann in den Einstellungen vollständig deaktiviert werden. Ein Limit pro Kandidat und ein Gesamtbudget pro Prüflauf begrenzen das vom Datenträger gelesene Datenvolumen; beide Grenzen lassen sich unabhängig auf unbegrenzt setzen. Bereits vorhandene Prüfsummen werden erneut verwendet, solange der katalogisierte Dateistand unverändert bleibt. Die Originaldateien werden dabei niemals in den Vault kopiert.
+
 ## Builds ohne lokale Toolchain
 
 1. Repository zu GitHub pushen.
