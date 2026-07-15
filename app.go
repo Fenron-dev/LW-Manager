@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -147,6 +149,22 @@ type DuplicateResult struct {
 	Bytes   int64                     `json:"bytes"`
 }
 
+type DuplicateSelection struct {
+	Hash   string `json:"hash"`
+	FileID int64  `json:"fileId"`
+}
+
+type QuarantineFailure struct {
+	FileID  int64  `json:"fileId"`
+	Message string `json:"message"`
+}
+
+type QuarantineResult struct {
+	Moved    int                 `json:"moved"`
+	Bytes    int64               `json:"bytes"`
+	Failures []QuarantineFailure `json:"failures"`
+}
+
 type LibraryResult struct {
 	Files      []database.FileResult `json:"files"`
 	Extensions []string              `json:"extensions"`
@@ -196,7 +214,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.42.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.43.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -563,6 +581,293 @@ func (a *App) SetDuplicatePreference(hash string, fileID int64) error {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	return a.catalog.SetDuplicatePreference(hash, fileID)
+}
+
+func (a *App) QuarantineDuplicates(selections []DuplicateSelection) (QuarantineResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return QuarantineResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if len(selections) == 0 {
+		return QuarantineResult{}, fmt.Errorf("keine Duplikate ausgewählt")
+	}
+	settings := a.currentSettings()
+	if !settings.DuplicateQuarantineEnabled {
+		return QuarantineResult{}, fmt.Errorf("Duplikat-Quarantäne ist in den Einstellungen deaktiviert")
+	}
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
+	candidates := make([]database.QuarantineCandidate, 0, len(selections))
+	usage, err := a.catalog.QuarantineUsage()
+	if err != nil {
+		return QuarantineResult{}, err
+	}
+	pendingBytes := int64(0)
+	selectedByHash := make(map[string]int64)
+	seen := make(map[int64]bool)
+	for _, selection := range selections {
+		if seen[selection.FileID] {
+			return QuarantineResult{}, fmt.Errorf("Datei %d wurde mehrfach ausgewählt", selection.FileID)
+		}
+		seen[selection.FileID] = true
+		candidate, err := a.catalog.QuarantineCandidate(selection.FileID, selection.Hash)
+		if err != nil {
+			return QuarantineResult{}, err
+		}
+		if candidate.Preferred {
+			return QuarantineResult{}, fmt.Errorf("das bevorzugte Original %q darf nicht in Quarantäne verschoben werden", candidate.Path)
+		}
+		if !settings.DuplicateQuarantineFileUnlimited && candidate.Size > int64(settings.DuplicateQuarantineFileMB)<<20 {
+			return QuarantineResult{}, fmt.Errorf("%q überschreitet das Quarantäne-Dateilimit von %d MB", candidate.Path, settings.DuplicateQuarantineFileMB)
+		}
+		pendingBytes += candidate.Size
+		if !settings.DuplicateQuarantineUnlimited && usage+pendingBytes > int64(settings.DuplicateQuarantineTotalMB)<<20 {
+			return QuarantineResult{}, fmt.Errorf("Quarantäne würde das Gesamtlimit von %d MB überschreiten", settings.DuplicateQuarantineTotalMB)
+		}
+		selectedByHash[candidate.Hash]++
+		if selectedByHash[candidate.Hash] >= candidate.GroupCount {
+			return QuarantineResult{}, fmt.Errorf("mindestens ein Fundort jeder Duplikatgruppe muss erhalten bleiben")
+		}
+		candidates = append(candidates, candidate)
+	}
+	// Every candidate is fully verified before the first source file is changed.
+	for _, candidate := range candidates {
+		if err := verifyQuarantineCandidate(candidate); err != nil {
+			return QuarantineResult{}, fmt.Errorf("%s: %w", candidate.Path, err)
+		}
+	}
+	result := QuarantineResult{Failures: make([]QuarantineFailure, 0)}
+	for _, candidate := range candidates {
+		if err := a.quarantineCandidate(candidate); err != nil {
+			result.Failures = append(result.Failures, QuarantineFailure{FileID: candidate.ID, Message: err.Error()})
+			continue
+		}
+		result.Moved++
+		result.Bytes += candidate.Size
+	}
+	return result, nil
+}
+
+func verifyQuarantineCandidate(candidate database.QuarantineCandidate) error {
+	source := database.SourceFile{Root: candidate.Root, Relative: candidate.Path, Path: filepath.Join(candidate.Root, filepath.FromSlash(candidate.Path)), Size: candidate.Size, Modified: candidate.Modified}
+	if err := verifyCatalogSource(source); err != nil {
+		return err
+	}
+	hash, _, err := hashFile(source.Path)
+	if err != nil {
+		return fmt.Errorf("SHA-256 konnte nicht erneut berechnet werden: %w", err)
+	}
+	if !strings.EqualFold(hash, candidate.Hash) {
+		return fmt.Errorf("Inhalt stimmt nicht mehr mit der Duplikatprüfung überein")
+	}
+	return verifyCatalogSource(source)
+}
+
+func (a *App) quarantineCandidate(candidate database.QuarantineCandidate) error {
+	if err := verifyQuarantineCandidate(candidate); err != nil {
+		return err
+	}
+	quarantineRoot, err := vault.DataPath(a.root, "quarantine")
+	if err != nil {
+		return err
+	}
+	directory, err := os.MkdirTemp(quarantineRoot, fmt.Sprintf("%d-", candidate.ID))
+	if err != nil {
+		return fmt.Errorf("Quarantäne vorbereiten: %w", err)
+	}
+	_ = os.Chmod(directory, 0o700)
+	destination := filepath.Join(directory, filepath.Base(candidate.Filename))
+	source := filepath.Join(candidate.Root, filepath.FromSlash(candidate.Path))
+	if err := moveVerifiedFile(source, destination, candidate.Hash); err != nil {
+		_ = os.RemoveAll(directory)
+		return fmt.Errorf("in Quarantäne verschieben: %w", err)
+	}
+	dataRoot, _ := vault.DataPath(a.root, "")
+	relative, err := filepath.Rel(dataRoot, destination)
+	if err != nil {
+		_ = moveVerifiedFile(destination, source, candidate.Hash)
+		return err
+	}
+	if err := a.catalog.RecordQuarantine(candidate, filepath.ToSlash(relative)); err != nil {
+		if restoreErr := moveVerifiedFile(destination, source, candidate.Hash); restoreErr != nil {
+			return fmt.Errorf("Katalog konnte nicht aktualisiert werden (%v); Rückverschiebung fehlgeschlagen: %w", err, restoreErr)
+		}
+		_ = os.RemoveAll(directory)
+		return fmt.Errorf("Katalog konnte nicht aktualisiert werden: %w", err)
+	}
+	return nil
+}
+
+func (a *App) GetQuarantineItems() ([]database.QuarantineItem, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return nil, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	return a.catalog.QuarantineItems()
+}
+
+func (a *App) RestoreQuarantineItem(id int64) error {
+	if a.initErr != nil || a.catalog == nil {
+		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
+	item, root, err := a.catalog.QuarantineItem(id)
+	if err != nil {
+		return err
+	}
+	quarantined, err := vault.DataPath(a.root, filepath.FromSlash(item.QuarantinePath))
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(quarantined)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != item.Size {
+		return fmt.Errorf("Quarantänedatei fehlt oder wurde verändert")
+	}
+	hash, _, err := hashFile(quarantined)
+	if err != nil || !strings.EqualFold(hash, item.Hash) {
+		return fmt.Errorf("Prüfsumme der Quarantänedatei stimmt nicht mehr")
+	}
+	destination, err := verifyRestoreDestination(root, item.OriginalPath)
+	if err != nil {
+		return err
+	}
+	if err := moveVerifiedFile(quarantined, destination, item.Hash); err != nil {
+		return fmt.Errorf("Datei wiederherstellen: %w", err)
+	}
+	if err := a.catalog.DeleteQuarantineRecord(id); err != nil {
+		if rollbackErr := moveVerifiedFile(destination, quarantined, item.Hash); rollbackErr != nil {
+			return fmt.Errorf("Quarantäne-Katalog konnte nicht aktualisiert werden (%v); Rückverschiebung fehlgeschlagen: %w", err, rollbackErr)
+		}
+		return err
+	}
+	_ = os.Remove(filepath.Dir(quarantined))
+	return nil
+}
+
+func verifyRestoreDestination(root, relative string) (string, error) {
+	if filepath.IsAbs(relative) {
+		return "", fmt.Errorf("ungültiger absoluter Wiederherstellungspfad")
+	}
+	root = filepath.Clean(root)
+	destination := filepath.Join(root, filepath.FromSlash(relative))
+	inside, err := filepath.Rel(root, destination)
+	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("Wiederherstellungspfad verlässt den Datenträger")
+	}
+	if info, err := os.Stat(root); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("Datenträger ist nicht angeschlossen")
+	}
+	if info, err := os.Stat(filepath.Dir(destination)); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("ursprünglicher Ordner ist nicht mehr verfügbar")
+	}
+	if err := verifyResolvedInside(root, filepath.Dir(destination)); err != nil {
+		return "", err
+	}
+	if _, err := os.Lstat(destination); err == nil {
+		return "", fmt.Errorf("am ursprünglichen Pfad existiert bereits eine Datei")
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	return destination, nil
+}
+
+func moveVerifiedFile(source, destination, expectedHash string) error {
+	info, err := os.Lstat(source)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("Quelle ist keine reguläre Datei")
+	}
+	if err := os.Link(source, destination); err == nil {
+		hash, _, hashErr := hashFile(destination)
+		if hashErr != nil || !strings.EqualFold(hash, expectedHash) {
+			_ = os.Remove(destination)
+			return fmt.Errorf("Quelle wurde während der Verschiebung verändert")
+		}
+		if err := os.Remove(source); err != nil {
+			_ = os.Remove(destination)
+			return err
+		}
+		return nil
+	} else if !errors.Is(err, syscall.EXDEV) {
+		if _, destinationErr := os.Lstat(destination); destinationErr == nil {
+			return fmt.Errorf("Zieldatei existiert bereits")
+		}
+		// Some removable filesystems do not support hard links. The exclusive
+		// destination creation below still guarantees that nothing is replaced.
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".vaultapp-move-*.tmp")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	cleanup := func() { _ = temporary.Close(); _ = os.Remove(temporaryPath) }
+	input, err := os.Open(source)
+	if err != nil {
+		cleanup()
+		return err
+	}
+	_, copyErr := io.Copy(temporary, input)
+	closeInputErr := input.Close()
+	if copyErr == nil {
+		copyErr = closeInputErr
+	}
+	if copyErr == nil {
+		copyErr = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); copyErr == nil {
+		copyErr = closeErr
+	}
+	if copyErr != nil {
+		cleanup()
+		return copyErr
+	}
+	if err := os.Chmod(temporaryPath, info.Mode().Perm()); err != nil {
+		cleanup()
+		return err
+	}
+	_ = os.Chtimes(temporaryPath, info.ModTime(), info.ModTime())
+	hash, _, err := hashFile(temporaryPath)
+	if err != nil || !strings.EqualFold(hash, expectedHash) {
+		cleanup()
+		return fmt.Errorf("kopierte Datei hat eine abweichende Prüfsumme")
+	}
+	verified, err := os.Open(temporaryPath)
+	if err != nil {
+		cleanup()
+		return err
+	}
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		_ = verified.Close()
+		cleanup()
+		return err
+	}
+	_, installErr := io.Copy(output, verified)
+	if installErr == nil {
+		installErr = output.Sync()
+	}
+	if closeErr := output.Close(); installErr == nil {
+		installErr = closeErr
+	}
+	if closeErr := verified.Close(); installErr == nil {
+		installErr = closeErr
+	}
+	if installErr != nil {
+		_ = os.Remove(destination)
+		cleanup()
+		return installErr
+	}
+	_ = os.Chtimes(destination, info.ModTime(), info.ModTime())
+	installedHash, _, err := hashFile(destination)
+	if err != nil || !strings.EqualFold(installedHash, expectedHash) {
+		_ = os.Remove(destination)
+		cleanup()
+		return fmt.Errorf("installierte Datei hat eine abweichende Prüfsumme")
+	}
+	cleanup()
+	if err := os.Remove(source); err != nil {
+		_ = os.Remove(destination)
+		return err
+	}
+	return nil
 }
 
 func hashFile(path string) (string, int64, error) {

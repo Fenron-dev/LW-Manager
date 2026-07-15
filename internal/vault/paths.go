@@ -70,7 +70,7 @@ func findRoot(start string) string {
 }
 
 func EnsureLayout(root string) error {
-	for _, dir := range []string{"data", "data/logs", "data/cache", "assets", "assets/models", "assets/thumbnails"} {
+	for _, dir := range []string{"data", "data/logs", "data/cache", "data/quarantine", "assets", "assets/models", "assets/thumbnails"} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 			return err
 		}

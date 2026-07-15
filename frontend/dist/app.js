@@ -126,6 +126,11 @@ async function showSettings() {
     $('#setting-duplicate-file-unlimited').checked = settings.duplicateFileUnlimited;
     $('#setting-duplicate-total-limit').value = settings.duplicateTotalMB;
     $('#setting-duplicate-total-unlimited').checked = settings.duplicateTotalUnlimited;
+    $('#setting-quarantine-enabled').checked = settings.duplicateQuarantineEnabled;
+    $('#setting-quarantine-file-limit').value = settings.duplicateQuarantineFileMB;
+    $('#setting-quarantine-file-unlimited').checked = settings.duplicateQuarantineFileUnlimited;
+    $('#setting-quarantine-total-limit').value = settings.duplicateQuarantineTotalMB;
+    $('#setting-quarantine-total-unlimited').checked = settings.duplicateQuarantineUnlimited;
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
     $('#setting-scan-diagnostics-enabled').checked = settings.scanDiagnosticsEnabled;
@@ -341,6 +346,11 @@ async function saveSettings() {
       duplicateFileUnlimited: $('#setting-duplicate-file-unlimited').checked,
       duplicateTotalMB: Number($('#setting-duplicate-total-limit').value),
       duplicateTotalUnlimited: $('#setting-duplicate-total-unlimited').checked,
+      duplicateQuarantineEnabled: $('#setting-quarantine-enabled').checked,
+      duplicateQuarantineFileMB: Number($('#setting-quarantine-file-limit').value),
+      duplicateQuarantineFileUnlimited: $('#setting-quarantine-file-unlimited').checked,
+      duplicateQuarantineTotalMB: Number($('#setting-quarantine-total-limit').value),
+      duplicateQuarantineUnlimited: $('#setting-quarantine-total-unlimited').checked,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       scanDiagnosticsEnabled: $('#setting-scan-diagnostics-enabled').checked,
@@ -522,6 +532,11 @@ function syncSettingsControls() {
   $('#setting-duplicate-file-limit').disabled = !duplicateEnabled || $('#setting-duplicate-file-unlimited').checked;
   $('#setting-duplicate-total-unlimited').disabled = !duplicateEnabled;
   $('#setting-duplicate-total-limit').disabled = !duplicateEnabled || $('#setting-duplicate-total-unlimited').checked;
+  const quarantineEnabled = $('#setting-quarantine-enabled').checked;
+  $('#setting-quarantine-file-unlimited').disabled = !quarantineEnabled;
+  $('#setting-quarantine-file-limit').disabled = !quarantineEnabled || $('#setting-quarantine-file-unlimited').checked;
+  $('#setting-quarantine-total-unlimited').disabled = !quarantineEnabled;
+  $('#setting-quarantine-total-limit').disabled = !quarantineEnabled || $('#setting-quarantine-total-unlimited').checked;
   const diagnosticsEnabled = $('#setting-scan-diagnostics-enabled').checked;
   $('#setting-scan-diagnostic-file-unlimited').disabled = !diagnosticsEnabled;
   $('#setting-scan-diagnostic-file-limit').disabled = !diagnosticsEnabled || $('#setting-scan-diagnostic-file-unlimited').checked;
@@ -1553,6 +1568,90 @@ function renderDuplicateSelectionSummary() {
   }
   const label = $('#duplicate-selection-label');
   if (label) label.textContent = `${files.toLocaleString('de-DE')} Dateien ausgewählt · ${formatBytes(bytes)} mögliche Einsparung`;
+  const action = $('#quarantine-selected-button');
+  if (action) action.disabled = files === 0;
+}
+
+function selectedDuplicateFiles() {
+  const selections = [];
+  for (const group of duplicateGroups) {
+    for (const fileId of duplicateSelections.get(group.hash) || []) selections.push({hash: group.hash, fileId});
+  }
+  return selections;
+}
+
+async function quarantineSelectedDuplicates() {
+  const selections = selectedDuplicateFiles();
+  if (!selections.length) return;
+  let bytes = 0;
+  for (const group of duplicateGroups) bytes += (duplicateSelections.get(group.hash)?.size || 0) * group.size;
+  if (!confirm(`${selections.length.toLocaleString('de-DE')} ausgewählte Dateien (${formatBytes(bytes)}) in die wiederherstellbare Quarantäne verschieben?\n\nVor jeder Datei werden Größe, Änderungszeit und SHA-256 erneut geprüft. Es wird nichts dauerhaft gelöscht.`)) return;
+  const button = $('#quarantine-selected-button');
+  button.disabled = true;
+  $('#duplicate-action-status').textContent = 'Sicherheitsprüfung und Verschiebung laufen …';
+  try {
+    const result = await window.go.main.App.QuarantineDuplicates(selections);
+    const failed = new Set(result.failures.map((failure) => failure.fileId));
+    const moved = new Set(selections.filter((selection) => !failed.has(selection.fileId)).map((selection) => selection.fileId));
+    duplicateGroups = duplicateGroups.map((group) => ({...group, files: group.files.filter((file) => !moved.has(file.id))})).filter((group) => group.files.length > 1);
+    duplicateSelections.clear();
+    renderDuplicateGroups();
+    $('#duplicate-action-status').textContent = `${result.moved.toLocaleString('de-DE')} Dateien (${formatBytes(result.bytes)}) quarantänisiert${result.failures.length ? ` · ${result.failures.length} fehlgeschlagen` : ''}.`;
+    if (result.failures.length) $('#duplicate-status').textContent = result.failures.map((failure) => failure.message).join(' · ');
+    await loadInfo();
+  } catch (error) {
+    $('#duplicate-action-status').textContent = `Quarantäne abgebrochen: ${error}`;
+  } finally {
+    renderDuplicateSelectionSummary();
+  }
+}
+
+async function showQuarantine() {
+  $('#quarantine-status').textContent = 'Quarantäne wird geladen …';
+  $('#quarantine-list').replaceChildren();
+  $('#quarantine-dialog').showModal();
+  await loadQuarantineItems();
+}
+
+async function loadQuarantineItems() {
+  const container = $('#quarantine-list');
+  container.replaceChildren();
+  try {
+    const items = await window.go.main.App.GetQuarantineItems();
+    $('#quarantine-status').textContent = items.length ? `${items.length.toLocaleString('de-DE')} wiederherstellbare Dateien` : 'Quarantäne ist leer.';
+    for (const item of items) {
+      const row = document.createElement('section');
+      row.className = 'quarantine-item';
+      const details = document.createElement('div');
+      const name = document.createElement('strong');
+      name.textContent = item.filename;
+      const path = document.createElement('span');
+      path.textContent = `${item.drive} · ${item.originalPath}`;
+      path.title = path.textContent;
+      const meta = document.createElement('small');
+      meta.textContent = `${formatBytes(item.size)} · quarantänisiert ${formatDate(item.quarantinedAt)}`;
+      details.append(name, path, meta);
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.textContent = 'Wiederherstellen';
+      restore.addEventListener('click', async () => {
+        if (!confirm(`${item.filename} am ursprünglichen Pfad wiederherstellen? Eine dort bereits vorhandene Datei wird niemals überschrieben.`)) return;
+        restore.disabled = true;
+        try {
+          await window.go.main.App.RestoreQuarantineItem(item.id);
+          $('#quarantine-status').textContent = 'Datei wurde wiederhergestellt. Für die Bibliothek bitte den Datenträger erneut scannen.';
+          await loadQuarantineItems();
+        } catch (error) {
+          $('#quarantine-status').textContent = `Wiederherstellung fehlgeschlagen: ${error}`;
+          restore.disabled = false;
+        }
+      });
+      row.append(details, restore);
+      container.append(row);
+    }
+  } catch (error) {
+    $('#quarantine-status').textContent = `Quarantäne konnte nicht geladen werden: ${error}`;
+  }
 }
 
 async function revealDuplicateFile(file) {
@@ -1598,7 +1697,7 @@ $('#restore-backup-button').addEventListener('click', restoreBackup);
 $('#save-ai-credential-button').addEventListener('click', saveAICredential);
 $('#clear-ai-credential-button').addEventListener('click', clearAICredential);
 $('#test-ai-provider-button').addEventListener('click', testAIProvider);
-['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-scan-exclusions-enabled', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-quarantine-enabled', '#setting-quarantine-file-unlimited', '#setting-quarantine-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-scan-exclusions-enabled', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#setting-ai-provider').addEventListener('change', () => {
@@ -1625,6 +1724,8 @@ $('#content-search').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
 $('#duplicate-button').addEventListener('click', findDuplicates);
+$('#quarantine-selected-button').addEventListener('click', quarantineSelectedDuplicates);
+$('#show-quarantine-button').addEventListener('click', showQuarantine);
 $('#export-library-button').addEventListener('click', exportLibrary);
 $('#save-drive-button').addEventListener('click', saveDrive);
 $('#add-location-button').addEventListener('click', addStorageLocation);

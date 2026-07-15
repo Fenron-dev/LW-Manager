@@ -48,6 +48,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.DuplicateCheckEnabled || settings.DuplicateFileMB != 1024 || settings.DuplicateTotalMB != 2048 || settings.DuplicateFileUnlimited || settings.DuplicateTotalUnlimited {
 		t.Fatalf("unexpected duplicate check defaults: %+v", settings)
 	}
+	if !settings.DuplicateQuarantineEnabled || settings.DuplicateQuarantineFileMB != 10_240 || settings.DuplicateQuarantineTotalMB != 102_400 || settings.DuplicateQuarantineFileUnlimited || settings.DuplicateQuarantineUnlimited {
+		t.Fatalf("unexpected duplicate quarantine defaults: %+v", settings)
+	}
 	settings.MaxSnapshots = 3
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)
@@ -93,6 +96,16 @@ func TestDuplicateCheckLimitValidation(t *testing.T) {
 	settings.DuplicateTotalMB = 1_000_001
 	if err := settings.Validate(); err == nil {
 		t.Fatal("expected duplicate total limit validation error")
+	}
+	settings = Defaults()
+	settings.DuplicateQuarantineFileMB = 0
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected quarantine file limit validation error")
+	}
+	settings = Defaults()
+	settings.DuplicateQuarantineTotalMB = 1_000_001
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected quarantine total limit validation error")
 	}
 }
 

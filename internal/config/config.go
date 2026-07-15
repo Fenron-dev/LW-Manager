@@ -11,87 +11,92 @@ import (
 )
 
 type Settings struct {
-	Version                  int      `json:"version"`
-	VolumeDetectionEnabled   bool     `json:"volumeDetectionEnabled"`
-	BackupEnabled            bool     `json:"backupEnabled"`
-	BackupIncludeThumbnails  bool     `json:"backupIncludeThumbnails"`
-	BackupFileMB             int      `json:"backupFileMB"`
-	BackupFileUnlimited      bool     `json:"backupFileUnlimited"`
-	BackupMaxMB              int      `json:"backupMaxMB"`
-	BackupUnlimited          bool     `json:"backupUnlimited"`
-	ArchiveEnabled           bool     `json:"archiveEnabled"`
-	MaxSnapshots             int      `json:"maxSnapshots"`
-	ScanDiagnosticsEnabled   bool     `json:"scanDiagnosticsEnabled"`
-	ScanDiagnosticFileMB     int      `json:"scanDiagnosticFileMB"`
-	ScanDiagnosticUnlimited  bool     `json:"scanDiagnosticUnlimited"`
-	ScanDiagnosticsTotalMB   int      `json:"scanDiagnosticsTotalMB"`
-	ScanDiagnosticsUnlimited bool     `json:"scanDiagnosticsUnlimited"`
-	ScanExclusionsEnabled    bool     `json:"scanExclusionsEnabled"`
-	ScanExcludeSystem        bool     `json:"scanExcludeSystem"`
-	ScanExcludeDevelopment   bool     `json:"scanExcludeDevelopment"`
-	ScanExcludedPatterns     []string `json:"scanExcludedPatterns"`
-	ImageAnalysisEnabled     bool     `json:"imageAnalysisEnabled"`
-	ImageJPEGEnabled         bool     `json:"imageJPEGEnabled"`
-	ImagePNGEnabled          bool     `json:"imagePNGEnabled"`
-	ImageGIFEnabled          bool     `json:"imageGIFEnabled"`
-	ImageHEICEnabled         bool     `json:"imageHEICEnabled"`
-	ImageHeaderMB            int      `json:"imageHeaderMB"`
-	ImageHeaderUnlimited     bool     `json:"imageHeaderUnlimited"`
-	ImageScanBudgetMB        int      `json:"imageScanBudgetMB"`
-	ImageScanBudgetUnlimited bool     `json:"imageScanBudgetUnlimited"`
-	EXIFEnabled              bool     `json:"exifEnabled"`
-	EXIFFileMB               int      `json:"exifFileMB"`
-	EXIFFileUnlimited        bool     `json:"exifFileUnlimited"`
-	EXIFTotalMB              int      `json:"exifTotalMB"`
-	EXIFTotalUnlimited       bool     `json:"exifTotalUnlimited"`
-	TextIndexEnabled         bool     `json:"textIndexEnabled"`
-	TextDocumentsEnabled     bool     `json:"textDocumentsEnabled"`
-	TextDataEnabled          bool     `json:"textDataEnabled"`
-	TextSourceEnabled        bool     `json:"textSourceEnabled"`
-	TextFileMB               int      `json:"textFileMB"`
-	TextFileUnlimited        bool     `json:"textFileUnlimited"`
-	TextTotalMB              int      `json:"textTotalMB"`
-	TextTotalUnlimited       bool     `json:"textTotalUnlimited"`
-	ImagePreviewEnabled      bool     `json:"imagePreviewEnabled"`
-	HEICPreviewEnabled       bool     `json:"heicPreviewEnabled"`
-	ImagePreviewMB           int      `json:"imagePreviewMB"`
-	ImagePreviewUnlimited    bool     `json:"imagePreviewUnlimited"`
-	ThumbnailCacheMB         int      `json:"thumbnailCacheMB"`
-	ThumbnailCacheUnlimited  bool     `json:"thumbnailCacheUnlimited"`
-	PDFPreviewEnabled        bool     `json:"pdfPreviewEnabled"`
-	PDFPreviewMB             int      `json:"pdfPreviewMB"`
-	PDFPreviewUnlimited      bool     `json:"pdfPreviewUnlimited"`
-	VideoPreviewEnabled      bool     `json:"videoPreviewEnabled"`
-	VideoPreviewMB           int      `json:"videoPreviewMB"`
-	VideoPreviewUnlimited    bool     `json:"videoPreviewUnlimited"`
-	AIEnabled                bool     `json:"aiEnabled"`
-	AIProvider               string   `json:"aiProvider"`
-	AIEndpoint               string   `json:"aiEndpoint"`
-	AIModel                  string   `json:"aiModel"`
-	AIFileMB                 int      `json:"aiFileMB"`
-	AIFileUnlimited          bool     `json:"aiFileUnlimited"`
-	AITotalMB                int      `json:"aiTotalMB"`
-	AITotalUnlimited         bool     `json:"aiTotalUnlimited"`
-	AITimeoutSeconds         int      `json:"aiTimeoutSeconds"`
-	AIVisionEnabled          bool     `json:"aiVisionEnabled"`
-	AIVisionModel            string   `json:"aiVisionModel"`
-	AIVisionFileMB           int      `json:"aiVisionFileMB"`
-	AIVisionFileUnlimited    bool     `json:"aiVisionFileUnlimited"`
-	AIVisionTotalMB          int      `json:"aiVisionTotalMB"`
-	AIVisionTotalUnlimited   bool     `json:"aiVisionTotalUnlimited"`
-	CatalogExportEnabled     bool     `json:"catalogExportEnabled"`
-	CatalogExportMaxMB       int      `json:"catalogExportMaxMB"`
-	CatalogExportUnlimited   bool     `json:"catalogExportUnlimited"`
-	DuplicateCheckEnabled    bool     `json:"duplicateCheckEnabled"`
-	DuplicateFileMB          int      `json:"duplicateFileMB"`
-	DuplicateFileUnlimited   bool     `json:"duplicateFileUnlimited"`
-	DuplicateTotalMB         int      `json:"duplicateTotalMB"`
-	DuplicateTotalUnlimited  bool     `json:"duplicateTotalUnlimited"`
+	Version                          int      `json:"version"`
+	VolumeDetectionEnabled           bool     `json:"volumeDetectionEnabled"`
+	BackupEnabled                    bool     `json:"backupEnabled"`
+	BackupIncludeThumbnails          bool     `json:"backupIncludeThumbnails"`
+	BackupFileMB                     int      `json:"backupFileMB"`
+	BackupFileUnlimited              bool     `json:"backupFileUnlimited"`
+	BackupMaxMB                      int      `json:"backupMaxMB"`
+	BackupUnlimited                  bool     `json:"backupUnlimited"`
+	ArchiveEnabled                   bool     `json:"archiveEnabled"`
+	MaxSnapshots                     int      `json:"maxSnapshots"`
+	ScanDiagnosticsEnabled           bool     `json:"scanDiagnosticsEnabled"`
+	ScanDiagnosticFileMB             int      `json:"scanDiagnosticFileMB"`
+	ScanDiagnosticUnlimited          bool     `json:"scanDiagnosticUnlimited"`
+	ScanDiagnosticsTotalMB           int      `json:"scanDiagnosticsTotalMB"`
+	ScanDiagnosticsUnlimited         bool     `json:"scanDiagnosticsUnlimited"`
+	ScanExclusionsEnabled            bool     `json:"scanExclusionsEnabled"`
+	ScanExcludeSystem                bool     `json:"scanExcludeSystem"`
+	ScanExcludeDevelopment           bool     `json:"scanExcludeDevelopment"`
+	ScanExcludedPatterns             []string `json:"scanExcludedPatterns"`
+	ImageAnalysisEnabled             bool     `json:"imageAnalysisEnabled"`
+	ImageJPEGEnabled                 bool     `json:"imageJPEGEnabled"`
+	ImagePNGEnabled                  bool     `json:"imagePNGEnabled"`
+	ImageGIFEnabled                  bool     `json:"imageGIFEnabled"`
+	ImageHEICEnabled                 bool     `json:"imageHEICEnabled"`
+	ImageHeaderMB                    int      `json:"imageHeaderMB"`
+	ImageHeaderUnlimited             bool     `json:"imageHeaderUnlimited"`
+	ImageScanBudgetMB                int      `json:"imageScanBudgetMB"`
+	ImageScanBudgetUnlimited         bool     `json:"imageScanBudgetUnlimited"`
+	EXIFEnabled                      bool     `json:"exifEnabled"`
+	EXIFFileMB                       int      `json:"exifFileMB"`
+	EXIFFileUnlimited                bool     `json:"exifFileUnlimited"`
+	EXIFTotalMB                      int      `json:"exifTotalMB"`
+	EXIFTotalUnlimited               bool     `json:"exifTotalUnlimited"`
+	TextIndexEnabled                 bool     `json:"textIndexEnabled"`
+	TextDocumentsEnabled             bool     `json:"textDocumentsEnabled"`
+	TextDataEnabled                  bool     `json:"textDataEnabled"`
+	TextSourceEnabled                bool     `json:"textSourceEnabled"`
+	TextFileMB                       int      `json:"textFileMB"`
+	TextFileUnlimited                bool     `json:"textFileUnlimited"`
+	TextTotalMB                      int      `json:"textTotalMB"`
+	TextTotalUnlimited               bool     `json:"textTotalUnlimited"`
+	ImagePreviewEnabled              bool     `json:"imagePreviewEnabled"`
+	HEICPreviewEnabled               bool     `json:"heicPreviewEnabled"`
+	ImagePreviewMB                   int      `json:"imagePreviewMB"`
+	ImagePreviewUnlimited            bool     `json:"imagePreviewUnlimited"`
+	ThumbnailCacheMB                 int      `json:"thumbnailCacheMB"`
+	ThumbnailCacheUnlimited          bool     `json:"thumbnailCacheUnlimited"`
+	PDFPreviewEnabled                bool     `json:"pdfPreviewEnabled"`
+	PDFPreviewMB                     int      `json:"pdfPreviewMB"`
+	PDFPreviewUnlimited              bool     `json:"pdfPreviewUnlimited"`
+	VideoPreviewEnabled              bool     `json:"videoPreviewEnabled"`
+	VideoPreviewMB                   int      `json:"videoPreviewMB"`
+	VideoPreviewUnlimited            bool     `json:"videoPreviewUnlimited"`
+	AIEnabled                        bool     `json:"aiEnabled"`
+	AIProvider                       string   `json:"aiProvider"`
+	AIEndpoint                       string   `json:"aiEndpoint"`
+	AIModel                          string   `json:"aiModel"`
+	AIFileMB                         int      `json:"aiFileMB"`
+	AIFileUnlimited                  bool     `json:"aiFileUnlimited"`
+	AITotalMB                        int      `json:"aiTotalMB"`
+	AITotalUnlimited                 bool     `json:"aiTotalUnlimited"`
+	AITimeoutSeconds                 int      `json:"aiTimeoutSeconds"`
+	AIVisionEnabled                  bool     `json:"aiVisionEnabled"`
+	AIVisionModel                    string   `json:"aiVisionModel"`
+	AIVisionFileMB                   int      `json:"aiVisionFileMB"`
+	AIVisionFileUnlimited            bool     `json:"aiVisionFileUnlimited"`
+	AIVisionTotalMB                  int      `json:"aiVisionTotalMB"`
+	AIVisionTotalUnlimited           bool     `json:"aiVisionTotalUnlimited"`
+	CatalogExportEnabled             bool     `json:"catalogExportEnabled"`
+	CatalogExportMaxMB               int      `json:"catalogExportMaxMB"`
+	CatalogExportUnlimited           bool     `json:"catalogExportUnlimited"`
+	DuplicateCheckEnabled            bool     `json:"duplicateCheckEnabled"`
+	DuplicateFileMB                  int      `json:"duplicateFileMB"`
+	DuplicateFileUnlimited           bool     `json:"duplicateFileUnlimited"`
+	DuplicateTotalMB                 int      `json:"duplicateTotalMB"`
+	DuplicateTotalUnlimited          bool     `json:"duplicateTotalUnlimited"`
+	DuplicateQuarantineEnabled       bool     `json:"duplicateQuarantineEnabled"`
+	DuplicateQuarantineFileMB        int      `json:"duplicateQuarantineFileMB"`
+	DuplicateQuarantineFileUnlimited bool     `json:"duplicateQuarantineFileUnlimited"`
+	DuplicateQuarantineTotalMB       int      `json:"duplicateQuarantineTotalMB"`
+	DuplicateQuarantineUnlimited     bool     `json:"duplicateQuarantineUnlimited"`
 }
 
 func Defaults() Settings {
 	return Settings{
-		Version: 14, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 15, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{},
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
@@ -104,6 +109,7 @@ func Defaults() Settings {
 		AIVisionModel: "gemma3:4b", AIVisionFileMB: 25, AIVisionTotalMB: 100,
 		CatalogExportEnabled: true, CatalogExportMaxMB: 100,
 		DuplicateCheckEnabled: true, DuplicateFileMB: 1024, DuplicateTotalMB: 2048,
+		DuplicateQuarantineEnabled: true, DuplicateQuarantineFileMB: 10_240, DuplicateQuarantineTotalMB: 102_400,
 	}
 }
 
@@ -132,7 +138,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 14
+	settings.Version = 15
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -256,6 +262,12 @@ func (settings Settings) Validate() error {
 	}
 	if settings.DuplicateTotalMB < 1 || settings.DuplicateTotalMB > 1_000_000 {
 		return fmt.Errorf("Duplikat-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.DuplicateQuarantineFileMB < 1 || settings.DuplicateQuarantineFileMB > 1_000_000 {
+		return fmt.Errorf("Quarantäne-Dateilimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.DuplicateQuarantineTotalMB < 1 || settings.DuplicateQuarantineTotalMB > 1_000_000 {
+		return fmt.Errorf("Quarantäne-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	return nil
 }

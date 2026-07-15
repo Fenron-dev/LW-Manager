@@ -149,6 +149,24 @@ type DuplicateGroup struct {
 	Files []DuplicateFile `json:"files"`
 }
 
+type QuarantineCandidate struct {
+	ID, DriveID, Size, GroupCount        int64
+	Root, Filename, Path, Modified, Hash string
+	Preferred                            bool
+}
+
+type QuarantineItem struct {
+	ID             int64  `json:"id"`
+	Drive          string `json:"drive"`
+	OriginalPath   string `json:"originalPath"`
+	Filename       string `json:"filename"`
+	Size           int64  `json:"size"`
+	Modified       string `json:"modified"`
+	Hash           string `json:"hash"`
+	QuarantinePath string `json:"quarantinePath"`
+	QuarantinedAt  string `json:"quarantinedAt"`
+}
+
 type DirectoryEntry struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
@@ -547,6 +565,104 @@ func (c *Catalog) SetDuplicatePreference(hash string, fileID int64) error {
 	_, err := c.db.Exec(`INSERT INTO duplicate_preferences(content_hash,drive_id,path,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)
 		ON CONFLICT(content_hash) DO UPDATE SET drive_id=excluded.drive_id,path=excluded.path,updated_at=CURRENT_TIMESTAMP`, hash, driveID, path)
 	return err
+}
+
+func (c *Catalog) QuarantineCandidate(fileID int64, expectedHash string) (QuarantineCandidate, error) {
+	var candidate QuarantineCandidate
+	expectedHash = strings.ToLower(strings.TrimSpace(expectedHash))
+	err := c.readDB.QueryRow(`SELECT f.id,f.drive_id,f.size,d.vault_path,f.filename,f.path,COALESCE(f.modified_at,''),COALESCE(f.content_hash,''),
+		(SELECT COUNT(*) FROM files sibling WHERE sibling.content_hash=f.content_hash),
+		CASE WHEN p.content_hash IS NULL THEN 0 ELSE 1 END
+		FROM files f JOIN drives d ON d.id=f.drive_id
+		LEFT JOIN duplicate_preferences p ON p.content_hash=f.content_hash AND p.drive_id=f.drive_id AND p.path=f.path
+		WHERE f.id=?`, fileID).Scan(&candidate.ID, &candidate.DriveID, &candidate.Size, &candidate.Root, &candidate.Filename, &candidate.Path,
+		&candidate.Modified, &candidate.Hash, &candidate.GroupCount, &candidate.Preferred)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return candidate, fmt.Errorf("Duplikatkandidat wurde im aktuellen Katalog nicht gefunden")
+		}
+		return candidate, err
+	}
+	if len(expectedHash) != sha256.Size*2 || !strings.EqualFold(candidate.Hash, expectedHash) || candidate.GroupCount < 2 {
+		return candidate, fmt.Errorf("Duplikatgruppe ist nicht mehr aktuell; bitte erneut prüfen")
+	}
+	return candidate, nil
+}
+
+func (c *Catalog) RecordQuarantine(candidate QuarantineCandidate, quarantinePath string) error {
+	tx, err := c.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`DELETE FROM files WHERE id=? AND drive_id=? AND path=? AND size=? AND COALESCE(modified_at,'')=? AND content_hash=?`,
+		candidate.ID, candidate.DriveID, candidate.Path, candidate.Size, candidate.Modified, candidate.Hash)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return fmt.Errorf("Katalogeintrag wurde zwischen Prüfung und Quarantäne geändert")
+	}
+	if _, err := tx.Exec(`INSERT INTO quarantined_files(drive_id,original_path,filename,size,modified_at,content_hash,quarantine_path)
+		VALUES(?,?,?,?,?,?,?)`, candidate.DriveID, candidate.Path, candidate.Filename, candidate.Size, candidate.Modified, candidate.Hash, quarantinePath); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (c *Catalog) QuarantineItems() ([]QuarantineItem, error) {
+	rows, err := c.readDB.Query(`SELECT q.id,COALESCE(NULLIF(d.display_name,''),d.label),q.original_path,q.filename,q.size,q.modified_at,q.content_hash,q.quarantine_path,q.quarantined_at
+		FROM quarantined_files q JOIN drives d ON d.id=q.drive_id ORDER BY q.quarantined_at DESC,q.id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]QuarantineItem, 0)
+	for rows.Next() {
+		var item QuarantineItem
+		if err := rows.Scan(&item.ID, &item.Drive, &item.OriginalPath, &item.Filename, &item.Size, &item.Modified, &item.Hash, &item.QuarantinePath, &item.QuarantinedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (c *Catalog) QuarantineUsage() (int64, error) {
+	var total int64
+	err := c.readDB.QueryRow(`SELECT COALESCE(SUM(size),0) FROM quarantined_files`).Scan(&total)
+	return total, err
+}
+
+func (c *Catalog) QuarantineItem(id int64) (QuarantineItem, string, error) {
+	var item QuarantineItem
+	var root string
+	err := c.readDB.QueryRow(`SELECT q.id,COALESCE(NULLIF(d.display_name,''),d.label),q.original_path,q.filename,q.size,q.modified_at,q.content_hash,q.quarantine_path,q.quarantined_at,d.vault_path
+		FROM quarantined_files q JOIN drives d ON d.id=q.drive_id WHERE q.id=?`, id).
+		Scan(&item.ID, &item.Drive, &item.OriginalPath, &item.Filename, &item.Size, &item.Modified, &item.Hash, &item.QuarantinePath, &item.QuarantinedAt, &root)
+	if err == sql.ErrNoRows {
+		err = fmt.Errorf("Quarantäne-Eintrag wurde nicht gefunden")
+	}
+	return item, root, err
+}
+
+func (c *Catalog) DeleteQuarantineRecord(id int64) error {
+	result, err := c.db.Exec(`DELETE FROM quarantined_files WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return fmt.Errorf("Quarantäne-Eintrag wurde nicht gefunden")
+	}
+	return nil
 }
 
 func (c *Catalog) Drives() ([]Drive, error) {

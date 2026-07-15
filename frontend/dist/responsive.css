@@ -149,6 +149,36 @@ main > *,
   margin-top: 12px;
 }
 
+.quarantine-list {
+  display: grid;
+  gap: 8px;
+}
+
+.quarantine-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #293648;
+  border-radius: 10px;
+  background: #0d151f;
+}
+
+.quarantine-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.quarantine-item span,
+.quarantine-item small {
+  overflow: hidden;
+  color: #8fa1b5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 1200px) {
   main {
     padding: 32px 24px;
@@ -203,6 +233,10 @@ main > *,
   .duplicate-file-actions {
     grid-column: 1 / -1;
     justify-content: flex-end;
+  }
+
+  .quarantine-item {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .duplicate-group-head,

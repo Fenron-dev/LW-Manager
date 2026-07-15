@@ -10,6 +10,8 @@ Die Duplikatprüfung kann in den Einstellungen vollständig deaktiviert werden. 
 
 Ab Version 0.42.0-dev lassen sich Fundorte einer Duplikatgruppe direkt im Finder, Explorer oder Dateimanager anzeigen. Pro Gruppe kann ein bevorzugtes Original dauerhaft markiert werden; diese Zuordnung bleibt über erneute Scans hinweg anhand von Datenträger und relativem Pfad erhalten. Weitere Kandidaten können gefahrlos vorgemerkt werden, wobei VaultApp Anzahl und mögliche Speicherersparnis berechnet. Die Vormerkung allein verändert oder löscht keine Datei.
 
+Version 0.43.0-dev ergänzt eine wiederherstellbare Duplikat-Quarantäne. Vor jeder Verschiebung werden Pfadgrenzen, regulärer Dateityp, Größe, Änderungszeit und SHA-256 erneut geprüft; bevorzugte Originale, veränderte Dateien, symbolische Links und offline liegende Datenträger werden abgewiesen. Die Quarantäne ersetzt keine vorhandene Datei und lässt sich in den Einstellungen aktivieren sowie pro Datei und insgesamt begrenzen. Beide Grenzen besitzen einen Unbegrenzt-Schalter. Wiederhergestellte Dateien erscheinen nach einem erneuten Scan wieder im aktuellen Katalog.
+
 ## Builds ohne lokale Toolchain
 
 1. Repository zu GitHub pushen.
@@ -69,11 +71,11 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
    - Relativen und vollständigen Pfad kopieren.
    - Nicht angeschlossene Datenträger eindeutig als offline kennzeichnen und Dateiaktionen dann deaktivieren.
 
-2. **Sichere Duplikatverwaltung – Bedienung umgesetzt in 0.42.0-dev**
+2. **Sichere Duplikatverwaltung – Quarantäne umgesetzt in 0.43.0-dev**
    - Fundorte direkt aus einer Duplikatgruppe öffnen und ein bevorzugtes Original markieren – umgesetzt.
    - Kandidaten einzeln auswählen und Größe der möglichen Einsparung anzeigen – umgesetzt.
-   - Entfernen ausschließlich nach erneuter Prüfung von Größe, Änderungszeit und SHA-256 sowie ausdrücklicher Bestätigung; symbolische Links und nicht erreichbare Datenträger werden abgewiesen.
-   - Zunächst eine wiederherstellbare Quarantäne beziehungsweise den Systempapierkorb bevorzugen; dauerhaftes Löschen bleibt eine gesonderte, deutlich gekennzeichnete Aktion.
+   - Entfernen ausschließlich nach erneuter Prüfung von Größe, Änderungszeit und SHA-256 sowie ausdrücklicher Bestätigung; symbolische Links und nicht erreichbare Datenträger werden abgewiesen – umgesetzt.
+   - Wiederherstellbare Quarantäne – umgesetzt. Dauerhaftes Löschen bleibt eine gesonderte, noch offene und deutlich zu kennzeichnende Aktion.
 
 3. **Erweiterte Inhaltsindizierung**
    - Text aus PDF- und ausgewählten Office-Dokumenten extrahieren; OCR für Bilder und Scans optional ergänzen.

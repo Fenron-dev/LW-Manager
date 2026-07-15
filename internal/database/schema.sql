@@ -58,6 +58,20 @@ CREATE TABLE IF NOT EXISTS duplicate_preferences (
 
 CREATE INDEX IF NOT EXISTS idx_duplicate_preferences_drive ON duplicate_preferences(drive_id);
 
+CREATE TABLE IF NOT EXISTS quarantined_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,
+    original_path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    modified_at TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    quarantine_path TEXT UNIQUE NOT NULL,
+    quarantined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_quarantined_files_drive ON quarantined_files(drive_id);
+
 CREATE TABLE IF NOT EXISTS scan_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,
