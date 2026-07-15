@@ -25,6 +25,23 @@ func TestExtractOfficeTextFromDOCXAndODT(t *testing.T) {
 	}
 }
 
+func TestExtractOfficeTextFromXLSXAndODS(t *testing.T) {
+	xlsx := officeTestArchive(t, map[string]string{
+		"xl/sharedStrings.xml":     `<sst xmlns="urn:x"><si><t>Projekt Alpha</t></si><si><r><t>Mehr</t></r><r><t>teilig</t></r></si></sst>`,
+		"xl/worksheets/sheet1.xml": `<worksheet xmlns="urn:x"><sheetData><row><c t="s"><v>0</v></c><c t="inlineStr"><is><t>Direkt</t></is></c><c><v>42.5</v></c><c t="b"><v>1</v></c><c t="s"><v>1</v></c></row></sheetData></worksheet>`,
+		"xl/styles.xml":            `<styleSheet xmlns="urn:x"><ignored>Nicht indexieren</ignored></styleSheet>`,
+	})
+	if text := extractOfficeText(xlsx, ".xlsx", 1024); text != "Projekt Alpha Direkt 42.5 WAHR Mehrteilig" {
+		t.Fatalf("XLSX text = %q", text)
+	}
+	ods := officeTestArchive(t, map[string]string{
+		"content.xml": `<office:document xmlns:office="urn:o" xmlns:text="urn:t"><office:body><office:spreadsheet><text:p>Budget</text:p><text:p>2026</text:p></office:spreadsheet></office:body></office:document>`,
+	})
+	if text := extractOfficeText(ods, ".ods", 1024); text != "Budget 2026" {
+		t.Fatalf("ODS text = %q", text)
+	}
+}
+
 func TestOfficeTextRejectsInvalidArchiveAndHonorsLimit(t *testing.T) {
 	if text := extractOfficeText([]byte("not a zip"), ".docx", 100); text != "" {
 		t.Fatalf("invalid archive text = %q", text)
@@ -50,6 +67,9 @@ func TestOfficeTextPreviewUsesOfficeToggleAndBudgets(t *testing.T) {
 	options.Office = false
 	if text := textPreview(file, ".docx", options, &read, &stored); text != "" || read != 0 || stored != 0 {
 		t.Fatalf("disabled Office preview = %q, read %d, stored %d", text, read, stored)
+	}
+	if !textExtensionEnabled(".xlsx", TextIndexOptions{Office: true}) || !textExtensionEnabled(".ods", TextIndexOptions{Office: true}) {
+		t.Fatal("spreadsheet extensions are not routed through the Office group")
 	}
 }
 
