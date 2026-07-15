@@ -161,7 +161,11 @@ async function showSettings() {
     $('#setting-thumbnail-cache-limit').value = settings.thumbnailCacheMB;
     $('#setting-thumbnail-cache-unlimited').checked = settings.thumbnailCacheUnlimited;
     $('#setting-pdf-limit').value = settings.pdfPreviewMB;
+    $('#setting-pdf-enabled').checked = settings.pdfPreviewEnabled;
+    $('#setting-pdf-unlimited').checked = settings.pdfPreviewUnlimited;
     $('#setting-video-limit').value = settings.videoPreviewMB;
+    $('#setting-video-enabled').checked = settings.videoPreviewEnabled;
+    $('#setting-video-unlimited').checked = settings.videoPreviewUnlimited;
     syncSettingsControls();
     await loadAIProviderStatus();
     await loadTagManagement();
@@ -301,7 +305,7 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 12,
+      version: 13,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       aiEnabled: $('#setting-ai-enabled').checked,
       aiProvider: $('#setting-ai-provider').value,
@@ -368,7 +372,11 @@ async function saveSettings() {
       thumbnailCacheMB: Number($('#setting-thumbnail-cache-limit').value),
       thumbnailCacheUnlimited: $('#setting-thumbnail-cache-unlimited').checked,
       pdfPreviewMB: Number($('#setting-pdf-limit').value),
-      videoPreviewMB: Number($('#setting-video-limit').value)
+      pdfPreviewEnabled: $('#setting-pdf-enabled').checked,
+      pdfPreviewUnlimited: $('#setting-pdf-unlimited').checked,
+      videoPreviewMB: Number($('#setting-video-limit').value),
+      videoPreviewEnabled: $('#setting-video-enabled').checked,
+      videoPreviewUnlimited: $('#setting-video-unlimited').checked
     });
     $('#settings-status').textContent = 'Einstellungen gespeichert ✓';
     saved = true;
@@ -526,6 +534,12 @@ function syncSettingsControls() {
   ['#setting-heic-preview', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => { $(selector).disabled = !previewEnabled; });
   $('#setting-image-limit').disabled = !previewEnabled || $('#setting-image-preview-unlimited').checked;
   $('#setting-thumbnail-cache-limit').disabled = !previewEnabled || $('#setting-thumbnail-cache-unlimited').checked;
+  const pdfEnabled = $('#setting-pdf-enabled').checked;
+  $('#setting-pdf-unlimited').disabled = !pdfEnabled;
+  $('#setting-pdf-limit').disabled = !pdfEnabled || $('#setting-pdf-unlimited').checked;
+  const videoEnabled = $('#setting-video-enabled').checked;
+  $('#setting-video-unlimited').disabled = !videoEnabled;
+  $('#setting-video-limit').disabled = !videoEnabled || $('#setting-video-unlimited').checked;
 }
 
 async function loadAIProviderStatus() {
@@ -1449,7 +1463,7 @@ $('#restore-backup-button').addEventListener('click', restoreBackup);
 $('#save-ai-credential-button').addEventListener('click', saveAICredential);
 $('#clear-ai-credential-button').addEventListener('click', clearAICredential);
 $('#test-ai-provider-button').addEventListener('click', testAIProvider);
-['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#setting-ai-provider').addEventListener('change', () => {

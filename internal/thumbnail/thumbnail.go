@@ -14,11 +14,12 @@ import (
 )
 
 func DataURL(source, cacheDir, identity string) (string, error) {
-	return DataURLWithLimits(source, cacheDir, identity, Limits{ImageEnabled: true, HEICEnabled: true, ImageMB: 100, CacheUnlimited: true, PDFMB: 40, VideoMB: 50})
+	return DataURLWithLimits(source, cacheDir, identity, Limits{ImageEnabled: true, HEICEnabled: true, ImageMB: 100, CacheUnlimited: true, PDFEnabled: true, PDFMB: 40, VideoEnabled: true, VideoMB: 50})
 }
 
 type Limits struct {
 	ImageEnabled, HEICEnabled, ImageUnlimited, CacheUnlimited bool
+	PDFEnabled, PDFUnlimited, VideoEnabled, VideoUnlimited    bool
 	ImageMB, CacheMB, PDFMB, VideoMB                          int
 }
 
@@ -44,7 +45,10 @@ func DataURLWithLimits(source, cacheDir, identity string, limits Limits) (string
 		return "", fmt.Errorf("Bild ist größer als %d MB", limits.ImageMB)
 	}
 	if strings.EqualFold(extension, ".pdf") {
-		if info.Size() > pdfLimit {
+		if !limits.PDFEnabled {
+			return "", fmt.Errorf("PDF-Vorschauen sind in den Einstellungen deaktiviert")
+		}
+		if !limits.PDFUnlimited && info.Size() > pdfLimit {
 			return "", fmt.Errorf("PDF-Vorschau ist größer als %d MB", limits.PDFMB)
 		}
 		data, err := os.ReadFile(source)
@@ -61,7 +65,10 @@ func DataURLWithLimits(source, cacheDir, identity string, limits Limits) (string
 		return encodeMIME(data, "image/webp"), nil
 	}
 	if videoMIME != "" {
-		if info.Size() > videoLimit {
+		if !limits.VideoEnabled {
+			return "", fmt.Errorf("Video-Vorschauen sind in den Einstellungen deaktiviert")
+		}
+		if !limits.VideoUnlimited && info.Size() > videoLimit {
 			return "", fmt.Errorf("Video-Vorschau ist größer als %d MB", limits.VideoMB)
 		}
 		data, err := os.ReadFile(source)

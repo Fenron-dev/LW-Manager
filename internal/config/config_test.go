@@ -30,6 +30,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.ImagePreviewEnabled || !settings.HEICPreviewEnabled {
 		t.Fatalf("unexpected preview defaults: %+v", settings)
 	}
+	if !settings.PDFPreviewEnabled || settings.PDFPreviewMB != 40 || settings.PDFPreviewUnlimited || !settings.VideoPreviewEnabled || settings.VideoPreviewMB != 50 || settings.VideoPreviewUnlimited {
+		t.Fatalf("unexpected document preview defaults: %+v", settings)
+	}
 	if settings.AIEnabled || settings.AIProvider != "ollama" || settings.AIEndpoint != "http://127.0.0.1:11434" || settings.AIModel == "" || settings.AIFileMB != 2 || settings.AITotalMB != 100 || settings.AITimeoutSeconds != 30 {
 		t.Fatalf("unexpected AI defaults: %+v", settings)
 	}

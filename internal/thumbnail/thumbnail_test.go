@@ -24,7 +24,7 @@ func TestVideoIsReturnedForEmbeddedPreview(t *testing.T) {
 	if err := os.WriteFile(source, []byte("test-video"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := DataURLWithLimits(source, filepath.Join(directory, "cache"), "test", Limits{ImageEnabled: true, ImageMB: 100, CacheUnlimited: true, PDFMB: 40, VideoMB: 50})
+	result, err := DataURLWithLimits(source, filepath.Join(directory, "cache"), "test", Limits{ImageEnabled: true, ImageMB: 100, CacheUnlimited: true, PDFEnabled: true, PDFMB: 40, VideoEnabled: true, VideoMB: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +60,38 @@ func TestPDFIsReturnedForEmbeddedPreview(t *testing.T) {
 	}
 	if !strings.HasPrefix(result, "data:application/pdf;base64,") {
 		t.Fatalf("unexpected data URL: %s", result)
+	}
+}
+
+func TestPDFAndVideoPreviewsCanBeDisabled(t *testing.T) {
+	directory := t.TempDir()
+	for name, limits := range map[string]Limits{
+		"document.pdf": {PDFEnabled: false, PDFMB: 40},
+		"clip.mp4":     {VideoEnabled: false, VideoMB: 50},
+	} {
+		source := filepath.Join(directory, name)
+		if err := os.WriteFile(source, []byte("preview"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := DataURLWithLimits(source, filepath.Join(directory, "cache"), "test", limits); err == nil || !strings.Contains(err.Error(), "deaktiviert") {
+			t.Fatalf("%s was not disabled: %v", name, err)
+		}
+	}
+}
+
+func TestPDFAndVideoUnlimitedIgnoreFileLimit(t *testing.T) {
+	directory := t.TempDir()
+	for name, limits := range map[string]Limits{
+		"document.pdf": {PDFEnabled: true, PDFMB: 1, PDFUnlimited: true},
+		"clip.mp4":     {VideoEnabled: true, VideoMB: 1, VideoUnlimited: true},
+	} {
+		source := filepath.Join(directory, name)
+		if err := os.WriteFile(source, make([]byte, (1<<20)+1), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := DataURLWithLimits(source, filepath.Join(directory, "cache"), "test", limits); err != nil {
+			t.Fatalf("%s unlimited preview failed: %v", name, err)
+		}
 	}
 }
 

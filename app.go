@@ -185,7 +185,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.38.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.39.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -590,6 +590,16 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	info, err := os.Lstat(source.Path)
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", fmt.Errorf("Vorschauen verarbeiten nur reguläre Dateien, keine Verknüpfungen")
+	}
+	if info.Size() != source.Size || info.ModTime().UTC().Format(time.RFC3339Nano) != source.Modified {
+		return "", fmt.Errorf("Datei wurde seit dem letzten Scan geändert; bitte Datenträger erneut scannen")
+	}
 	cache, err := vault.AssetPath(a.root, "thumbnails")
 	if err != nil {
 		return "", err
@@ -598,7 +608,9 @@ func (a *App) GetImagePreview(id int64) (string, error) {
 	return thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("%s:%d", source.Modified, source.Size), thumbnail.Limits{
 		ImageEnabled: settings.ImagePreviewEnabled, HEICEnabled: settings.HEICPreviewEnabled, ImageMB: settings.ImagePreviewMB,
 		ImageUnlimited: settings.ImagePreviewUnlimited, CacheMB: settings.ThumbnailCacheMB,
-		CacheUnlimited: settings.ThumbnailCacheUnlimited, PDFMB: settings.PDFPreviewMB, VideoMB: settings.VideoPreviewMB,
+		CacheUnlimited: settings.ThumbnailCacheUnlimited,
+		PDFEnabled:     settings.PDFPreviewEnabled, PDFMB: settings.PDFPreviewMB, PDFUnlimited: settings.PDFPreviewUnlimited,
+		VideoEnabled: settings.VideoPreviewEnabled, VideoMB: settings.VideoPreviewMB, VideoUnlimited: settings.VideoPreviewUnlimited,
 	})
 }
 
@@ -805,7 +817,9 @@ func (a *App) AnalyzeImage(id int64) (ai.AnalysisResult, error) {
 	}
 	dataURL, err := thumbnail.DataURLWithLimits(source.Path, cache, fmt.Sprintf("vision:%s:%d", source.Modified, source.Size), thumbnail.Limits{
 		ImageEnabled: true, HEICEnabled: true, ImageMB: settings.AIVisionFileMB, ImageUnlimited: settings.AIVisionFileUnlimited,
-		CacheMB: settings.ThumbnailCacheMB, CacheUnlimited: settings.ThumbnailCacheUnlimited, PDFMB: settings.PDFPreviewMB, VideoMB: settings.VideoPreviewMB,
+		CacheMB: settings.ThumbnailCacheMB, CacheUnlimited: settings.ThumbnailCacheUnlimited,
+		PDFEnabled: settings.PDFPreviewEnabled, PDFMB: settings.PDFPreviewMB, PDFUnlimited: settings.PDFPreviewUnlimited,
+		VideoEnabled: settings.VideoPreviewEnabled, VideoMB: settings.VideoPreviewMB, VideoUnlimited: settings.VideoPreviewUnlimited,
 	})
 	if err != nil {
 		return ai.AnalysisResult{}, fmt.Errorf("Bild für Vision vorbereiten: %w", err)
