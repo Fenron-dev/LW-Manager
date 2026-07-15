@@ -251,7 +251,7 @@ async function loadTagManagement() {
     input.maxLength = 50;
     input.setAttribute('aria-label', `Tag ${tag.name}`);
     const usage = document.createElement('span');
-    usage.textContent = `${tag.driveCount.toLocaleString('de-DE')} Datenträger · ${tag.snapshotCount.toLocaleString('de-DE')} Archivstände`;
+    usage.textContent = `${tag.driveCount.toLocaleString('de-DE')} Datenträger · ${tag.fileCount.toLocaleString('de-DE')} Dateien · ${tag.snapshotCount.toLocaleString('de-DE')} Archivstände`;
     const rename = document.createElement('button');
     rename.type = 'button';
     rename.className = 'secondary';
@@ -274,7 +274,7 @@ async function loadTagManagement() {
     });
     input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !rename.disabled) rename.click(); });
     remove.addEventListener('click', async () => {
-      if (!confirm(`Tag „${tag.name}“ wirklich von allen Datenträgern und Archivständen entfernen?`)) return;
+      if (!confirm(`Tag „${tag.name}“ wirklich von allen Datenträgern, Dateien und Archivständen entfernen?`)) return;
       remove.disabled = true;
       try {
         await window.go.main.App.DeleteTag(tag.name);
@@ -692,7 +692,7 @@ function fillTagFilter(selector, tags, countKey, emptyLabel) {
 
 async function refreshTags() {
   const tags = await window.go.main.App.GetTags();
-  fillTagFilter('#library-tag-filter', tags, 'driveCount', 'Alle Tags');
+  fillTagFilter('#library-tag-filter', tags, 'libraryCount', 'Alle Tags');
   fillTagFilter('#drive-tag-filter', tags, 'driveCount', 'Alle Tags');
   fillTagFilter('#compare-tag-filter', tags, 'snapshotCount', 'Alle Tags');
   return tags;
@@ -1142,6 +1142,10 @@ async function openFileDialog(file) {
   $('#detail-type').textContent = `${file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt')}${dimensions}`;
   $('#detail-size').textContent = formatBytes(file.size);
   $('#detail-modified').textContent = formatDate(file.modified);
+	$('#edit-file-tags').value = (file.tags || []).join(', ');
+	$('#save-file-tags-button').dataset.fileId = file.id || '';
+	$('#save-file-tags-button').disabled = !file.id;
+	$('#file-tag-status').textContent = '';
   renderFileAI(file);
   let metadata = {};
   try { metadata = file.metadata ? JSON.parse(file.metadata) : {}; } catch (_) { metadata = {}; }
@@ -1201,6 +1205,23 @@ async function openFileDialog(file) {
     }).catch((error) => { previewStatus.textContent = `Keine Vorschau: ${error}`; });
   }
   $('#file-dialog').showModal();
+}
+
+async function saveCurrentFileTags() {
+	const button = $('#save-file-tags-button');
+	const id = Number(button.dataset.fileId);
+	if (!id) return;
+	button.disabled = true;
+	$('#file-tag-status').textContent = 'Tags werden gespeichert …';
+	try {
+		await window.go.main.App.UpdateFileTags(id, parseTags($('#edit-file-tags').value));
+		const details = await window.go.main.App.GetFileDetails(id);
+		$('#edit-file-tags').value = (details.tags || []).join(', ');
+		$('#file-tag-status').textContent = 'Gespeichert ✓';
+		await refreshTags();
+	} catch (error) {
+		$('#file-tag-status').textContent = `Fehler: ${error}`;
+	} finally { button.disabled = false; }
 }
 
 function renderFileAI(file) {
@@ -1422,6 +1443,7 @@ $('#save-drive-button').addEventListener('click', saveDrive);
 $('#add-location-button').addEventListener('click', addStorageLocation);
 $('#analyze-file-button').addEventListener('click', analyzeCurrentFile);
 $('#analyze-image-button').addEventListener('click', analyzeCurrentImage);
+$('#save-file-tags-button').addEventListener('click', saveCurrentFileTags);
 $('#archive-back').addEventListener('click', () => { $('#snapshot-list').classList.remove('hidden'); $('#archive-browser').classList.add('hidden'); });
 $('#archive-search-button').addEventListener('click', () => loadArchiveFiles(1));
 $('#archive-search').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadArchiveFiles(1); } });

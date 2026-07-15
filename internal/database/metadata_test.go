@@ -99,6 +99,56 @@ func TestRenameMergeAndDeleteTags(t *testing.T) {
 	}
 }
 
+func TestManualFileTagsSurviveRescanAndFilterLibrary(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	root := t.TempDir()
+	modified := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	scan := func(files []scanner.File) {
+		t.Helper()
+		if err := catalog.ReplaceDriveScan(DriveScan{Path: root, Label: "DATEIEN", UUID: "file-tag-volume", Files: files}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scan([]scanner.File{{Path: "docs/plan.txt", Filename: "plan.txt", Size: 12, Modified: modified}})
+	result, err := catalog.Search("plan", "", "", 0, false, 50, 0)
+	if err != nil || len(result.Files) != 1 {
+		t.Fatalf("search = %#v, %v", result, err)
+	}
+	if err := catalog.UpdateFileTags(result.Files[0].ID, []string{" Wichtig ", "Projekt", "wichtig"}); err != nil {
+		t.Fatal(err)
+	}
+	details, err := catalog.FileDetails(result.Files[0].ID)
+	if err != nil || !reflect.DeepEqual(details.Tags, []string{"Projekt", "Wichtig"}) {
+		t.Fatalf("file tags = %#v, %v", details, err)
+	}
+	result, err = catalog.Search("", "", "WICHTIG", 0, false, 50, 0)
+	if err != nil || result.Total != 1 {
+		t.Fatalf("tag filtered search = %#v, %v", result, err)
+	}
+	tags, err := catalog.Tags()
+	if err != nil || len(tags) != 2 || tags[1].FileCount != 1 || tags[1].LibraryCount != 1 {
+		t.Fatalf("tag summary = %#v, %v", tags, err)
+	}
+	scan([]scanner.File{{Path: "docs/plan.txt", Filename: "plan.txt", Size: 13, Modified: modified.Add(time.Minute)}})
+	result, _ = catalog.Search("plan", "", "", 0, false, 50, 0)
+	details, err = catalog.FileDetails(result.Files[0].ID)
+	if err != nil || len(details.Tags) != 2 {
+		t.Fatalf("tags did not survive same-path rescan: %#v, %v", details, err)
+	}
+	if err := catalog.RenameTag("Wichtig", "Projekt"); err != nil {
+		t.Fatal(err)
+	}
+	details, err = catalog.FileDetails(result.Files[0].ID)
+	if err != nil || !reflect.DeepEqual(details.Tags, []string{"Projekt"}) {
+		t.Fatalf("merged file tags = %#v, %v", details, err)
+	}
+	scan(nil)
+	tags, err = catalog.Tags()
+	if err != nil || len(tags) != 1 || tags[0].FileCount != 0 || tags[0].LibraryCount != 0 {
+		t.Fatalf("removed file assignment remains: %#v, %v", tags, err)
+	}
+}
+
 func TestProtectedSnapshotSurvivesCleanupAndDelete(t *testing.T) {
 	catalog := openMetadataTestCatalog(t)
 	root := t.TempDir()

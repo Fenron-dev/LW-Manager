@@ -99,8 +99,18 @@ CREATE TABLE IF NOT EXISTS snapshot_tags (
     PRIMARY KEY (snapshot_id, tag_id)
 );
 
+CREATE TABLE IF NOT EXISTS file_tags (
+    drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    source TEXT NOT NULL DEFAULT 'manual',
+    PRIMARY KEY (drive_id, path, tag_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_drive_tags_tag ON drive_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_snapshot_tags_tag ON snapshot_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_file_tags_file ON file_tags(drive_id,path);
 
 CREATE TABLE IF NOT EXISTS file_ai_analyses (
     drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,

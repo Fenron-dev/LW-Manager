@@ -81,6 +81,7 @@ type FileResult struct {
 	AITruncated  bool     `json:"aiTruncated"`
 	AIImageBytes int64    `json:"aiImageBytes"`
 	AIVision     bool     `json:"aiVision"`
+	Tags         []string `json:"tags"`
 }
 
 type AIFileInput struct {
@@ -118,6 +119,8 @@ type TagSummary struct {
 	Name          string `json:"name"`
 	DriveCount    int64  `json:"driveCount"`
 	SnapshotCount int64  `json:"snapshotCount"`
+	FileCount     int64  `json:"fileCount"`
+	LibraryCount  int64  `json:"libraryCount"`
 }
 
 type HashCandidate struct {
@@ -296,8 +299,10 @@ func (c *Catalog) Search(query, extension, tag string, driveID int64, includeCon
 	tag = strings.TrimSpace(tag)
 	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\' OR (? <> '' AND ? = 1 AND LOWER(COALESCE(f.text_content,'')) LIKE LOWER(?) ESCAPE '\') OR
 		(? <> '' AND ? = 1 AND EXISTS(SELECT 1 FROM file_ai_analyses ai WHERE ai.drive_id=f.drive_id AND ai.path=f.path AND ai.source_size=f.size AND ai.source_modified=COALESCE(f.modified_at,'') AND (LOWER(ai.summary) LIKE LOWER(?) ESCAPE '\' OR LOWER(ai.tags) LIKE LOWER(?) ESCAPE '\'))))
-		AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?) AND (? = '' OR EXISTS(SELECT 1 FROM drive_tags dt JOIN tags t ON t.id=dt.tag_id WHERE dt.drive_id=f.drive_id AND t.name=? COLLATE NOCASE))`
-	args := []any{pattern, pattern, query, includeContent, pattern, query, includeContent, pattern, pattern, extension, extension, driveID, driveID, tag, tag}
+		AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?) AND (? = '' OR
+		EXISTS(SELECT 1 FROM drive_tags dt JOIN tags t ON t.id=dt.tag_id WHERE dt.drive_id=f.drive_id AND t.name=? COLLATE NOCASE) OR
+		EXISTS(SELECT 1 FROM file_tags ft JOIN tags t ON t.id=ft.tag_id WHERE ft.drive_id=f.drive_id AND ft.path=f.path AND t.name=? COLLATE NOCASE))`
+	args := []any{pattern, pattern, query, includeContent, pattern, query, includeContent, pattern, pattern, extension, extension, driveID, driveID, tag, tag, tag}
 	result := SearchResult{Extensions: make([]string, 0)}
 	if err := c.db.QueryRow("SELECT COUNT(*) FROM files f WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
@@ -339,7 +344,9 @@ func (c *Catalog) Search(query, extension, tag string, driveID int64, includeCon
 func (c *Catalog) Tags() ([]TagSummary, error) {
 	rows, err := c.readDB.Query(`SELECT t.name,
 		(SELECT COUNT(*) FROM drive_tags dt WHERE dt.tag_id=t.id),
-		(SELECT COUNT(*) FROM snapshot_tags st WHERE st.tag_id=t.id)
+		(SELECT COUNT(*) FROM snapshot_tags st WHERE st.tag_id=t.id),
+		(SELECT COUNT(*) FROM file_tags ft WHERE ft.tag_id=t.id),
+		(SELECT COUNT(*) FROM files f WHERE EXISTS(SELECT 1 FROM drive_tags dt WHERE dt.drive_id=f.drive_id AND dt.tag_id=t.id) OR EXISTS(SELECT 1 FROM file_tags ft WHERE ft.drive_id=f.drive_id AND ft.path=f.path AND ft.tag_id=t.id))
 		FROM tags t ORDER BY t.name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
@@ -348,7 +355,7 @@ func (c *Catalog) Tags() ([]TagSummary, error) {
 	result := make([]TagSummary, 0)
 	for rows.Next() {
 		var tag TagSummary
-		if err := rows.Scan(&tag.Name, &tag.DriveCount, &tag.SnapshotCount); err != nil {
+		if err := rows.Scan(&tag.Name, &tag.DriveCount, &tag.SnapshotCount, &tag.FileCount, &tag.LibraryCount); err != nil {
 			return nil, err
 		}
 		result = append(result, tag)
@@ -390,6 +397,9 @@ func (c *Catalog) RenameTag(currentName, newName string) error {
 			_, err = tx.Exec(`INSERT OR IGNORE INTO snapshot_tags(snapshot_id,tag_id) SELECT snapshot_id,? FROM snapshot_tags WHERE tag_id=?`, targetID, sourceID)
 		}
 		if err == nil {
+			_, err = tx.Exec(`INSERT OR IGNORE INTO file_tags(drive_id,path,tag_id,source) SELECT drive_id,path,?,source FROM file_tags WHERE tag_id=?`, targetID, sourceID)
+		}
+		if err == nil {
 			_, err = tx.Exec(`DELETE FROM tags WHERE id=?`, sourceID)
 		}
 	}
@@ -399,7 +409,7 @@ func (c *Catalog) RenameTag(currentName, newName string) error {
 	return tx.Commit()
 }
 
-// DeleteTag removes a tag and all of its drive and snapshot assignments.
+// DeleteTag removes a tag and all of its drive, snapshot and file assignments.
 func (c *Catalog) DeleteTag(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -624,15 +634,49 @@ func (c *Catalog) SourceFile(id int64) (SourceFile, error) {
 
 func (c *Catalog) FileDetails(id int64) (FileResult, error) {
 	var file FileResult
-	var tags string
+	var aiTags, tags string
 	err := c.readDB.QueryRow(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.modified_at,''),
-		COALESCE(a.summary,''),COALESCE(a.tags,'[]'),COALESCE(a.provider,''),COALESCE(a.model,''),COALESCE(a.analyzed_at,''),COALESCE(a.input_bytes,0),COALESCE(a.input_truncated,0),COALESCE(a.image_bytes,0),COALESCE(a.vision,0)
+		COALESCE(a.summary,''),COALESCE(a.tags,'[]'),COALESCE(a.provider,''),COALESCE(a.model,''),COALESCE(a.analyzed_at,''),COALESCE(a.input_bytes,0),COALESCE(a.input_truncated,0),COALESCE(a.image_bytes,0),COALESCE(a.vision,0),
+		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN file_tags ft ON ft.tag_id=t.id WHERE ft.drive_id=f.drive_id AND ft.path=f.path ORDER BY t.name COLLATE NOCASE)),'')
 		FROM files f JOIN drives d ON d.id=f.drive_id LEFT JOIN file_ai_analyses a ON a.drive_id=f.drive_id AND a.path=f.path AND a.source_size=f.size AND a.source_modified=COALESCE(f.modified_at,'') WHERE f.id=?`, id).
-		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified, &file.AISummary, &tags, &file.AIProvider, &file.AIModel, &file.AIAnalyzedAt, &file.AIInputBytes, &file.AITruncated, &file.AIImageBytes, &file.AIVision)
-	if err == nil && json.Unmarshal([]byte(tags), &file.AITags) != nil {
+		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified, &file.AISummary, &aiTags, &file.AIProvider, &file.AIModel, &file.AIAnalyzedAt, &file.AIInputBytes, &file.AITruncated, &file.AIImageBytes, &file.AIVision, &tags)
+	if err == nil && json.Unmarshal([]byte(aiTags), &file.AITags) != nil {
 		file.AITags = []string{}
 	}
+	file.Tags = splitStoredTags(tags)
 	return file, err
+}
+
+func (c *Catalog) UpdateFileTags(id int64, tags []string) error {
+	normalized, err := normalizeTags(tags)
+	if err != nil {
+		return err
+	}
+	tx, err := c.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var driveID int64
+	var path string
+	if err := tx.QueryRow(`SELECT drive_id,path FROM files WHERE id=?`, id).Scan(&driveID, &path); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("Datei wurde nicht gefunden")
+		}
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM file_tags WHERE drive_id=? AND path=?`, driveID, path); err != nil {
+		return err
+	}
+	for _, name := range normalized {
+		if _, err := tx.Exec(`INSERT INTO tags(name) VALUES(?) ON CONFLICT(name) DO NOTHING`, name); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO file_tags(drive_id,path,tag_id,source) SELECT ?,?,id,'manual' FROM tags WHERE name=? COLLATE NOCASE`, driveID, path, name); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (c *Catalog) AIFileInput(id int64) (AIFileInput, error) {
@@ -1094,6 +1138,11 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 	}
 	if _, err = tx.Exec(`DELETE FROM file_ai_analyses WHERE drive_id=? AND NOT EXISTS (
 		SELECT 1 FROM files f WHERE f.drive_id=file_ai_analyses.drive_id AND f.path=file_ai_analyses.path AND f.size=file_ai_analyses.source_size AND COALESCE(f.modified_at,'')=file_ai_analyses.source_modified
+	)`, driveID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM file_tags WHERE drive_id=? AND NOT EXISTS (
+		SELECT 1 FROM files f WHERE f.drive_id=file_tags.drive_id AND f.path=file_tags.path
 	)`, driveID); err != nil {
 		return err
 	}
