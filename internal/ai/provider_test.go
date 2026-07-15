@@ -57,3 +57,29 @@ func TestProviderRejectsNonHTTPURL(t *testing.T) {
 		t.Fatal("expected invalid endpoint error")
 	}
 }
+
+func TestOllamaAnalysisParsesJSONResult(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/chat" {
+			t.Errorf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+		return response(`{"message":{"content":"{\"summary\":\"Ein Projektplan.\",\"tags\":[\"Planung\",\"Projekt\",\"Projekt\"]}"}}`), nil
+	})}
+	result, err := analyzeWithClient(context.Background(), Config{Provider: "ollama", Endpoint: "http://127.0.0.1:11434", Model: "test", TimeoutSeconds: 5}, "", AnalysisRequest{Filename: "plan.txt", Content: "Inhalt"}, client)
+	if err != nil || result.Summary != "Ein Projektplan." || len(result.Tags) != 2 || result.Provider != "ollama" {
+		t.Fatalf("unexpected result: %+v, %v", result, err)
+	}
+}
+
+func TestOpenRouterAnalysisSendsCredential(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path != "/api/v1/chat/completions" || request.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("unexpected request %s, %q", request.URL.Path, request.Header.Get("Authorization"))
+		}
+		return response("{\"choices\":[{\"message\":{\"content\":\"```json\\n{\\\"summary\\\":\\\"Ein Dokument.\\\",\\\"tags\\\":[\\\"Dokument\\\"]}\\n```\"}}]}"), nil
+	})}
+	result, err := analyzeWithClient(context.Background(), Config{Provider: "openrouter", Endpoint: "https://openrouter.example/api/v1", Model: "test", TimeoutSeconds: 5}, "token", AnalysisRequest{Filename: "doc.md"}, client)
+	if err != nil || result.Summary != "Ein Dokument." || len(result.Tags) != 1 {
+		t.Fatalf("unexpected result: %+v, %v", result, err)
+	}
+}

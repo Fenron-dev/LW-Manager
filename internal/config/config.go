@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -170,6 +171,10 @@ func (settings Settings) Validate() error {
 	}
 	if settings.AIEndpoint == "" {
 		return fmt.Errorf("KI-Endpunkt darf nicht leer sein")
+	}
+	endpoint, err := url.Parse(settings.AIEndpoint)
+	if err != nil || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") {
+		return fmt.Errorf("KI-Endpunkt muss eine gültige HTTP-Adresse sein")
 	}
 	if settings.AIModel == "" {
 		return fmt.Errorf("KI-Modell darf nicht leer sein")

@@ -29,6 +29,7 @@ import (
 type App struct {
 	ctx        context.Context
 	scanMu     sync.Mutex
+	aiMu       sync.Mutex
 	settingsMu sync.RWMutex
 	root       string
 	configPath string
@@ -169,7 +170,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.33.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.34.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -521,26 +522,102 @@ func (a *App) TestAIProvider() (ai.ConnectionResult, error) {
 	if !settings.AIEnabled {
 		return ai.ConnectionResult{}, fmt.Errorf("KI-Funktionen sind in den Einstellungen deaktiviert")
 	}
-	credential := ""
-	if settings.AIProvider == "openrouter" {
-		path, err := a.aiCredentialPath()
-		if err != nil {
-			return ai.ConnectionResult{}, err
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return ai.ConnectionResult{}, fmt.Errorf("für OpenRouter ist noch kein API-Schlüssel gespeichert")
-			}
-			return ai.ConnectionResult{}, err
-		}
-		credential = string(data)
+	credential, err := a.aiCredential(settings.AIProvider)
+	if err != nil {
+		return ai.ConnectionResult{}, err
 	}
 	ctx := a.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	return ai.TestConnection(ctx, ai.Config{Provider: settings.AIProvider, Endpoint: settings.AIEndpoint, Model: settings.AIModel, TimeoutSeconds: settings.AITimeoutSeconds}, credential)
+}
+
+func (a *App) AnalyzeFile(id int64) (ai.AnalysisResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return ai.AnalysisResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	settings := a.currentSettings()
+	if !settings.AIEnabled {
+		return ai.AnalysisResult{}, fmt.Errorf("KI-Funktionen sind in den Einstellungen deaktiviert")
+	}
+	if !a.aiMu.TryLock() {
+		return ai.AnalysisResult{}, fmt.Errorf("es läuft bereits eine KI-Analyse")
+	}
+	defer a.aiMu.Unlock()
+	input, err := a.catalog.AIFileInput(id)
+	if err != nil {
+		return ai.AnalysisResult{}, fmt.Errorf("Datei für KI-Analyse laden: %w", err)
+	}
+	content := input.TextContent
+	limit := int64(-1)
+	if !settings.AIFileUnlimited {
+		limit = int64(settings.AIFileMB) << 20
+	}
+	if !settings.AITotalUnlimited {
+		total := int64(settings.AITotalMB) << 20
+		if limit < 0 || total < limit {
+			limit = total
+		}
+	}
+	truncated := false
+	if limit >= 0 && int64(len(content)) > limit {
+		content = truncateUTF8(content, limit)
+		truncated = true
+	}
+	credential, err := a.aiCredential(settings.AIProvider)
+	if err != nil {
+		return ai.AnalysisResult{}, err
+	}
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := ai.Analyze(ctx, ai.Config{Provider: settings.AIProvider, Endpoint: settings.AIEndpoint, Model: settings.AIModel, TimeoutSeconds: settings.AITimeoutSeconds}, credential, ai.AnalysisRequest{
+		Filename: input.Filename, Path: input.Path, MIMEType: input.MIMEType, Size: input.Size, Width: input.Width, Height: input.Height, Metadata: input.Metadata, Content: content,
+	})
+	if err != nil {
+		return ai.AnalysisResult{}, err
+	}
+	result.InputBytes = int64(len(content))
+	result.InputTruncated = truncated
+	result.AnalyzedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := a.catalog.SaveAIAnalysis(input, database.AIAnalysis{Summary: result.Summary, Tags: result.Tags, Provider: result.Provider, Model: result.Model, InputBytes: result.InputBytes, InputTruncated: result.InputTruncated}); err != nil {
+		return ai.AnalysisResult{}, fmt.Errorf("KI-Analyse speichern: %w", err)
+	}
+	return result, nil
+}
+
+func truncateUTF8(value string, limit int64) string {
+	if limit <= 0 {
+		return ""
+	}
+	if int64(len(value)) <= limit {
+		return value
+	}
+	end := int(limit)
+	for end > 0 && (value[end]&0xc0) == 0x80 {
+		end--
+	}
+	return value[:end]
+}
+
+func (a *App) aiCredential(provider string) (string, error) {
+	if provider != "openrouter" {
+		return "", nil
+	}
+	path, err := a.aiCredentialPath()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("für OpenRouter ist noch kein API-Schlüssel gespeichert")
+		}
+		return "", err
+	}
+	return string(data), nil
 }
 
 func (a *App) aiCredentialPath() (string, error) {

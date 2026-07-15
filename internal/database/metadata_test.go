@@ -145,3 +145,51 @@ func TestProtectedSnapshotSurvivesCleanupAndDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAIAnalysisSurvivesOnlyUnchangedRescan(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	root := t.TempDir()
+	modified := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	scan := func(size int64, changed time.Time) {
+		t.Helper()
+		if err := catalog.ReplaceDriveScan(DriveScan{Path: root, Label: "AI", UUID: "ai-volume", Files: []scanner.File{{Path: "docs/readme.txt", Filename: "readme.txt", Size: size, MIMEType: "text/plain", TextContent: "Projektinhalt", Modified: changed}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scan(12, modified)
+	result, err := catalog.Search("readme", "", "", 0, false, 50, 0)
+	if err != nil || len(result.Files) != 1 {
+		t.Fatalf("search = %#v, %v", result, err)
+	}
+	input, err := catalog.AIFileInput(result.Files[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.SaveAIAnalysis(input, AIAnalysis{Summary: "Eine Projektbeschreibung.", Tags: []string{" Projekt ", "Dokument", "projekt"}, Provider: "ollama", Model: "test", InputBytes: 13}); err != nil {
+		t.Fatal(err)
+	}
+	aiSearch, err := catalog.Search("Projektbeschreibung", "", "", 0, true, 50, 0)
+	if err != nil || aiSearch.Total != 1 {
+		t.Fatalf("AI search = %#v, %v", aiSearch, err)
+	}
+	aiSearch, err = catalog.Search("Projektbeschreibung", "", "", 0, false, 50, 0)
+	if err != nil || aiSearch.Total != 0 {
+		t.Fatalf("disabled AI search = %#v, %v", aiSearch, err)
+	}
+	details, err := catalog.FileDetails(input.ID)
+	if err != nil || details.AISummary == "" || !reflect.DeepEqual(details.AITags, []string{"Dokument", "Projekt"}) {
+		t.Fatalf("details = %#v, %v", details, err)
+	}
+	scan(12, modified)
+	result, _ = catalog.Search("readme", "", "", 0, false, 50, 0)
+	details, err = catalog.FileDetails(result.Files[0].ID)
+	if err != nil || details.AISummary == "" {
+		t.Fatalf("analysis did not survive unchanged rescan: %#v, %v", details, err)
+	}
+	scan(13, modified.Add(time.Minute))
+	result, _ = catalog.Search("readme", "", "", 0, false, 50, 0)
+	details, err = catalog.FileDetails(result.Files[0].ID)
+	if err != nil || details.AISummary != "" || len(details.AITags) != 0 {
+		t.Fatalf("stale analysis survived changed rescan: %#v, %v", details, err)
+	}
+}

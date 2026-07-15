@@ -38,13 +38,14 @@ Sicherungen und Rückfallsicherungen, die direkt im Vault-Ordner liegen, erschei
 
 Unter **Einstellungen → KI-Anbieter** kann die optionale KI-Grundlage vollständig deaktiviert oder für ein lokales Ollama beziehungsweise den entfernten Dienst OpenRouter konfiguriert werden. Endpunkt, Modell, Zeitlimit sowie Datenbudgets pro Datei und insgesamt sind einstellbar; beide Budgets besitzen einen Unbegrenzt-Schalter. Der Verbindungstest liest ausschließlich die Modellliste und startet keine Analyse. OpenRouter-Schlüssel werden getrennt unter `data/secrets/ai-provider.key` gespeichert und bewusst nicht in VaultApp-Backups aufgenommen. Auf einem unverschlüsselten portablen Medium bleibt diese Datei dennoch lokal lesbar.
 
+In den Dateidetails kann eine einzelne Datei ausdrücklich zur KI-Analyse gesendet werden. VaultApp überträgt Dateiname, Pfad, Typ, Größe, vorhandene Metadaten und – sofern zuvor über den Volltextindex erfasst – begrenzten Textinhalt. Originaldateien werden für die KI nicht zusätzlich geöffnet. Zusammenfassung, Schlagwörter, Anbieter, Modell und verwendete Textmenge werden im Katalog gespeichert; unveränderte Dateien behalten das Ergebnis bei einem erneuten Scan, während veraltete Ergebnisse geänderter oder entfernter Dateien bereinigt werden. Die erweiterte Bibliothekssuche findet auf Wunsch auch KI-Zusammenfassungen und -Schlagwörter.
+
 Unter macOS muss `VaultApp.app` im heruntergeladenen Paket bleiben: Der portable Vault-Ordner ist der Ordner direkt neben dem App-Bundle. Die Anwendung darf nicht einzeln nach `/Applications` verschoben werden, wenn Daten weiterhin auf dem externen Medium liegen sollen.
 
 Im macOS-Paket liegt außerdem `VaultApp-starten.command`. Die Datei arbeitet relativ zu ihrem eigenen Ordner, entfernt das Quarantäne-Attribut von der danebenliegenden `VaultApp.app`, setzt das interne Programm auf ausführbar und startet die App. App und Starterdatei müssen daher im selben Ordner bleiben.
 
 ## Roadmap
 
-- KI-Tagging und Zusammenfassungen über den konfigurierten Anbieter
 - optionale Bildanalyse über Vision-Modelle
 
 Das vollständige Ausgangskonzept liegt unter `Konzepte/VaultApp_Konzept.md`.

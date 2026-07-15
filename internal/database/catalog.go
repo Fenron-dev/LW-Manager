@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,18 +60,48 @@ type Drive struct {
 }
 
 type FileResult struct {
-	ID           int64  `json:"id"`
-	Filename     string `json:"filename"`
-	Path         string `json:"path"`
-	Extension    string `json:"extension"`
-	MIMEType     string `json:"mimeType"`
-	Drive        string `json:"drive"`
-	Size         int64  `json:"size"`
-	Width        int    `json:"width"`
-	Height       int    `json:"height"`
-	Metadata     string `json:"metadata"`
-	MatchSnippet string `json:"matchSnippet"`
-	Modified     string `json:"modified"`
+	ID           int64    `json:"id"`
+	Filename     string   `json:"filename"`
+	Path         string   `json:"path"`
+	Extension    string   `json:"extension"`
+	MIMEType     string   `json:"mimeType"`
+	Drive        string   `json:"drive"`
+	Size         int64    `json:"size"`
+	Width        int      `json:"width"`
+	Height       int      `json:"height"`
+	Metadata     string   `json:"metadata"`
+	MatchSnippet string   `json:"matchSnippet"`
+	Modified     string   `json:"modified"`
+	AISummary    string   `json:"aiSummary"`
+	AITags       []string `json:"aiTags"`
+	AIProvider   string   `json:"aiProvider"`
+	AIModel      string   `json:"aiModel"`
+	AIAnalyzedAt string   `json:"aiAnalyzedAt"`
+	AIInputBytes int64    `json:"aiInputBytes"`
+	AITruncated  bool     `json:"aiTruncated"`
+}
+
+type AIFileInput struct {
+	ID          int64
+	DriveID     int64
+	Filename    string
+	Path        string
+	MIMEType    string
+	Size        int64
+	Width       int
+	Height      int
+	Metadata    string
+	TextContent string
+	Modified    string
+}
+
+type AIAnalysis struct {
+	Summary        string
+	Tags           []string
+	Provider       string
+	Model          string
+	InputBytes     int64
+	InputTruncated bool
 }
 
 type SearchResult struct {
@@ -259,8 +290,10 @@ func (c *Catalog) Search(query, extension, tag string, driveID int64, includeCon
 	pattern := "%" + escapeLike(query) + "%"
 	extension = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(extension)), ".")
 	tag = strings.TrimSpace(tag)
-	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\' OR (? <> '' AND ? = 1 AND LOWER(COALESCE(f.text_content,'')) LIKE LOWER(?) ESCAPE '\')) AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?) AND (? = '' OR EXISTS(SELECT 1 FROM drive_tags dt JOIN tags t ON t.id=dt.tag_id WHERE dt.drive_id=f.drive_id AND t.name=? COLLATE NOCASE))`
-	args := []any{pattern, pattern, query, includeContent, pattern, extension, extension, driveID, driveID, tag, tag}
+	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\' OR (? <> '' AND ? = 1 AND LOWER(COALESCE(f.text_content,'')) LIKE LOWER(?) ESCAPE '\') OR
+		(? <> '' AND ? = 1 AND EXISTS(SELECT 1 FROM file_ai_analyses ai WHERE ai.drive_id=f.drive_id AND ai.path=f.path AND ai.source_size=f.size AND ai.source_modified=COALESCE(f.modified_at,'') AND (LOWER(ai.summary) LIKE LOWER(?) ESCAPE '\' OR LOWER(ai.tags) LIKE LOWER(?) ESCAPE '\'))))
+		AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?) AND (? = '' OR EXISTS(SELECT 1 FROM drive_tags dt JOIN tags t ON t.id=dt.tag_id WHERE dt.drive_id=f.drive_id AND t.name=? COLLATE NOCASE))`
+	args := []any{pattern, pattern, query, includeContent, pattern, query, includeContent, pattern, pattern, extension, extension, driveID, driveID, tag, tag}
 	result := SearchResult{Extensions: make([]string, 0)}
 	if err := c.db.QueryRow("SELECT COUNT(*) FROM files f WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
@@ -587,10 +620,48 @@ func (c *Catalog) SourceFile(id int64) (SourceFile, error) {
 
 func (c *Catalog) FileDetails(id int64) (FileResult, error) {
 	var file FileResult
-	err := c.readDB.QueryRow(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.modified_at,'')
-		FROM files f JOIN drives d ON d.id=f.drive_id WHERE f.id=?`, id).
-		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified)
+	var tags string
+	err := c.readDB.QueryRow(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.modified_at,''),
+		COALESCE(a.summary,''),COALESCE(a.tags,'[]'),COALESCE(a.provider,''),COALESCE(a.model,''),COALESCE(a.analyzed_at,''),COALESCE(a.input_bytes,0),COALESCE(a.input_truncated,0)
+		FROM files f JOIN drives d ON d.id=f.drive_id LEFT JOIN file_ai_analyses a ON a.drive_id=f.drive_id AND a.path=f.path AND a.source_size=f.size AND a.source_modified=COALESCE(f.modified_at,'') WHERE f.id=?`, id).
+		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified, &file.AISummary, &tags, &file.AIProvider, &file.AIModel, &file.AIAnalyzedAt, &file.AIInputBytes, &file.AITruncated)
+	if err == nil && json.Unmarshal([]byte(tags), &file.AITags) != nil {
+		file.AITags = []string{}
+	}
 	return file, err
+}
+
+func (c *Catalog) AIFileInput(id int64) (AIFileInput, error) {
+	var input AIFileInput
+	err := c.readDB.QueryRow(`SELECT f.id,f.drive_id,f.filename,f.path,COALESCE(f.mime_type,''),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.text_content,''),COALESCE(f.modified_at,'') FROM files f WHERE f.id=?`, id).
+		Scan(&input.ID, &input.DriveID, &input.Filename, &input.Path, &input.MIMEType, &input.Size, &input.Width, &input.Height, &input.Metadata, &input.TextContent, &input.Modified)
+	return input, err
+}
+
+func (c *Catalog) SaveAIAnalysis(input AIFileInput, analysis AIAnalysis) error {
+	tags, err := normalizeTags(analysis.Tags)
+	if err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+	result, err := c.db.Exec(`INSERT INTO file_ai_analyses(drive_id,path,source_size,source_modified,summary,tags,provider,model,input_bytes,input_truncated,analyzed_at)
+		SELECT drive_id,path,size,COALESCE(modified_at,''),?,?,?,?,?,?,CURRENT_TIMESTAMP FROM files WHERE id=? AND drive_id=? AND path=? AND size=? AND COALESCE(modified_at,'')=?
+		ON CONFLICT(drive_id,path) DO UPDATE SET source_size=excluded.source_size,source_modified=excluded.source_modified,summary=excluded.summary,tags=excluded.tags,provider=excluded.provider,model=excluded.model,input_bytes=excluded.input_bytes,input_truncated=excluded.input_truncated,analyzed_at=CURRENT_TIMESTAMP`,
+		strings.TrimSpace(analysis.Summary), string(encoded), strings.TrimSpace(analysis.Provider), strings.TrimSpace(analysis.Model), analysis.InputBytes, analysis.InputTruncated, input.ID, input.DriveID, input.Path, input.Size, input.Modified)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return fmt.Errorf("Datei wurde während der KI-Analyse geändert oder entfernt")
+	}
+	return nil
 }
 
 func (c *Catalog) Snapshots(driveID int64) ([]Snapshot, error) {
@@ -1004,6 +1075,11 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 		if _, err = statement.Exec(driveID, file.Path, file.Filename, file.Extension, file.Size, file.Width, file.Height, file.MIMEType, file.Metadata, file.TextContent, created, file.Modified.UTC().Format(time.RFC3339Nano)); err != nil {
 			return err
 		}
+	}
+	if _, err = tx.Exec(`DELETE FROM file_ai_analyses WHERE drive_id=? AND NOT EXISTS (
+		SELECT 1 FROM files f WHERE f.drive_id=file_ai_analyses.drive_id AND f.path=file_ai_analyses.path AND f.size=file_ai_analyses.source_size AND COALESCE(f.modified_at,'')=file_ai_analyses.source_modified
+	)`, driveID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

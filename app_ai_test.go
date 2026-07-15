@@ -43,3 +43,12 @@ func TestEmptyAICredentialIsRejected(t *testing.T) {
 		t.Fatal("expected empty credential error")
 	}
 }
+
+func TestTruncateUTF8KeepsValidBoundary(t *testing.T) {
+	if got := truncateUTF8("ab€cd", 4); got != "ab" {
+		t.Fatalf("truncateUTF8 = %q, want %q", got, "ab")
+	}
+	if got := truncateUTF8("ab€cd", 5); got != "ab€" {
+		t.Fatalf("truncateUTF8 exact = %q, want %q", got, "ab€")
+	}
+}

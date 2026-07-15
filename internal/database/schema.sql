@@ -101,3 +101,20 @@ CREATE TABLE IF NOT EXISTS snapshot_tags (
 
 CREATE INDEX IF NOT EXISTS idx_drive_tags_tag ON drive_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_snapshot_tags_tag ON snapshot_tags(tag_id);
+
+CREATE TABLE IF NOT EXISTS file_ai_analyses (
+    drive_id INTEGER NOT NULL REFERENCES drives(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    source_size INTEGER NOT NULL,
+    source_modified TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    tags TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_bytes INTEGER NOT NULL DEFAULT 0,
+    input_truncated INTEGER NOT NULL DEFAULT 0,
+    analyzed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (drive_id, path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_ai_drive ON file_ai_analyses(drive_id);

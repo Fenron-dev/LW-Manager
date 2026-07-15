@@ -68,4 +68,9 @@ func TestAISettingsValidation(t *testing.T) {
 	if err := settings.Validate(); err == nil {
 		t.Fatal("expected timeout validation error")
 	}
+	settings = Defaults()
+	settings.AIEndpoint = "file:///tmp/model"
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected endpoint validation error")
+	}
 }

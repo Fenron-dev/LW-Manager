@@ -1116,7 +1116,7 @@ async function addStorageLocation() {
 }
 
 async function openFileDialog(file) {
-  if (file.id && file.metadata === undefined) {
+  if (file.id) {
     try { file = await window.go.main.App.GetFileDetails(file.id); } catch (_) { /* Basisdaten weiter anzeigen. */ }
   }
   $('#file-dialog-title').textContent = file.filename;
@@ -1126,6 +1126,7 @@ async function openFileDialog(file) {
   $('#detail-type').textContent = `${file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt')}${dimensions}`;
   $('#detail-size').textContent = formatBytes(file.size);
   $('#detail-modified').textContent = formatDate(file.modified);
+  renderFileAI(file);
   let metadata = {};
   try { metadata = file.metadata ? JSON.parse(file.metadata) : {}; } catch (_) { metadata = {}; }
   const orientationNames = {1: 'Normal', 2: 'Horizontal gespiegelt', 3: '180°', 4: 'Vertikal gespiegelt', 5: '90° gespiegelt', 6: '90° im Uhrzeigersinn', 7: '270° gespiegelt', 8: '270° im Uhrzeigersinn'};
@@ -1184,6 +1185,44 @@ async function openFileDialog(file) {
     }).catch((error) => { previewStatus.textContent = `Keine Vorschau: ${error}`; });
   }
   $('#file-dialog').showModal();
+}
+
+function renderFileAI(file) {
+  const button = $('#analyze-file-button');
+  button.dataset.fileId = file.id || '';
+  button.disabled = !file.id;
+  button.textContent = file.aiSummary ? 'Neu analysieren' : 'Datei analysieren';
+  $('#file-ai-summary').textContent = file.aiSummary || '';
+  $('#file-ai-summary').classList.toggle('hidden', !file.aiSummary);
+  const tags = $('#file-ai-tags'); tags.replaceChildren();
+  (file.aiTags || []).forEach((tag) => { const badge = document.createElement('em'); badge.textContent = tag; tags.append(badge); });
+  const available = Boolean(file.aiSummary);
+  $('#file-ai-status').textContent = available ? 'Gespeicherte KI-Analyse' : 'Noch keine Analyse gespeichert.';
+  const input = file.aiInputBytes ? `${formatBytes(file.aiInputBytes)} Textinhalt${file.aiTruncated ? ' · durch Limit gekürzt' : ''}` : 'Nur Metadaten verwendet';
+  $('#file-ai-meta').textContent = available ? `${file.aiProvider} · ${file.aiModel} · ${formatDate(file.aiAnalyzedAt)} · ${input}` : 'Die Analyse startet ausschließlich über den Button.';
+}
+
+async function analyzeCurrentFile() {
+  const button = $('#analyze-file-button');
+  const id = Number(button.dataset.fileId);
+  if (!id) return;
+  try {
+    const provider = await window.go.main.App.GetAIProviderStatus();
+    const endpoint = new URL(provider.endpoint);
+    const local = ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname);
+    if (!local && !confirm(`Dateimetadaten und gegebenenfalls begrenzter indexierter Text werden an ${provider.provider} unter ${provider.endpoint} übertragen. Analyse starten?`)) return;
+  } catch (error) { $('#file-ai-status').textContent = `KI-Einstellungen konnten nicht geprüft werden: ${error}`; return; }
+  button.disabled = true;
+  $('#file-ai-status').textContent = 'Datei wird analysiert …';
+  try {
+    await window.go.main.App.AnalyzeFile(id);
+    const details = await window.go.main.App.GetFileDetails(id);
+    renderFileAI(details);
+    $('#file-ai-status').textContent = 'Analyse gespeichert.';
+  } catch (error) {
+    $('#file-ai-status').textContent = `Analyse fehlgeschlagen: ${error}`;
+    button.disabled = false;
+  }
 }
 
 async function findDuplicates() {
@@ -1333,6 +1372,7 @@ $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
 $('#duplicate-button').addEventListener('click', findDuplicates);
 $('#save-drive-button').addEventListener('click', saveDrive);
 $('#add-location-button').addEventListener('click', addStorageLocation);
+$('#analyze-file-button').addEventListener('click', analyzeCurrentFile);
 $('#archive-back').addEventListener('click', () => { $('#snapshot-list').classList.remove('hidden'); $('#archive-browser').classList.add('hidden'); });
 $('#archive-search-button').addEventListener('click', () => loadArchiveFiles(1));
 $('#archive-search').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadArchiveFiles(1); } });
