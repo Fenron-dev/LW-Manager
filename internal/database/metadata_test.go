@@ -125,6 +125,13 @@ func TestManualFileTagsSurviveRescanAndFilterLibrary(t *testing.T) {
 	if err != nil || result.Total != 1 {
 		t.Fatalf("tag filtered search = %#v, %v", result, err)
 	}
+	var exported []ExportFile
+	if err := catalog.ExportFiles("", "", "wichtig", 0, false, func(file ExportFile) error {
+		exported = append(exported, file)
+		return nil
+	}); err != nil || len(exported) != 1 || exported[0].Path != "docs/plan.txt" || !reflect.DeepEqual(exported[0].Tags, []string{"Projekt", "Wichtig"}) {
+		t.Fatalf("exported files = %#v, %v", exported, err)
+	}
 	tags, err := catalog.Tags()
 	if err != nil || len(tags) != 2 || tags[1].FileCount != 1 || tags[1].LibraryCount != 1 {
 		t.Fatalf("tag summary = %#v, %v", tags, err)

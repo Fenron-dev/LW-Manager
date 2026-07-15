@@ -115,6 +115,12 @@ type SearchResult struct {
 	Total      int64        `json:"total"`
 }
 
+type ExportFile struct {
+	Filename, Drive, Path, Extension, MIMEType, Modified, AISummary string
+	Size                                                            int64
+	Tags, AITags                                                    []string
+}
+
 type TagSummary struct {
 	Name          string `json:"name"`
 	DriveCount    int64  `json:"driveCount"`
@@ -293,16 +299,7 @@ func (c *Catalog) Search(query, extension, tag string, driveID int64, includeCon
 	if offset < 0 {
 		offset = 0
 	}
-	query = strings.TrimSpace(query)
-	pattern := "%" + escapeLike(query) + "%"
-	extension = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(extension)), ".")
-	tag = strings.TrimSpace(tag)
-	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\' OR (? <> '' AND ? = 1 AND LOWER(COALESCE(f.text_content,'')) LIKE LOWER(?) ESCAPE '\') OR
-		(? <> '' AND ? = 1 AND EXISTS(SELECT 1 FROM file_ai_analyses ai WHERE ai.drive_id=f.drive_id AND ai.path=f.path AND ai.source_size=f.size AND ai.source_modified=COALESCE(f.modified_at,'') AND (LOWER(ai.summary) LIKE LOWER(?) ESCAPE '\' OR LOWER(ai.tags) LIKE LOWER(?) ESCAPE '\'))))
-		AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?) AND (? = '' OR
-		EXISTS(SELECT 1 FROM drive_tags dt JOIN tags t ON t.id=dt.tag_id WHERE dt.drive_id=f.drive_id AND t.name=? COLLATE NOCASE) OR
-		EXISTS(SELECT 1 FROM file_tags ft JOIN tags t ON t.id=ft.tag_id WHERE ft.drive_id=f.drive_id AND ft.path=f.path AND t.name=? COLLATE NOCASE))`
-	args := []any{pattern, pattern, query, includeContent, pattern, query, includeContent, pattern, pattern, extension, extension, driveID, driveID, tag, tag, tag}
+	where, args, query := searchFilter(query, extension, tag, driveID, includeContent)
 	result := SearchResult{Extensions: make([]string, 0)}
 	if err := c.db.QueryRow("SELECT COUNT(*) FROM files f WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
@@ -339,6 +336,48 @@ func (c *Catalog) Search(query, extension, tag string, driveID int64, includeCon
 		result.Extensions = append(result.Extensions, value)
 	}
 	return result, extensionRows.Err()
+}
+
+func searchFilter(query, extension, tag string, driveID int64, includeContent bool) (string, []any, string) {
+	query = strings.TrimSpace(query)
+	pattern := "%" + escapeLike(query) + "%"
+	extension = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(extension)), ".")
+	tag = strings.TrimSpace(tag)
+	where := `(LOWER(f.filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(f.path) LIKE LOWER(?) ESCAPE '\' OR (? <> '' AND ? = 1 AND LOWER(COALESCE(f.text_content,'')) LIKE LOWER(?) ESCAPE '\') OR
+		(? <> '' AND ? = 1 AND EXISTS(SELECT 1 FROM file_ai_analyses ai WHERE ai.drive_id=f.drive_id AND ai.path=f.path AND ai.source_size=f.size AND ai.source_modified=COALESCE(f.modified_at,'') AND (LOWER(ai.summary) LIKE LOWER(?) ESCAPE '\' OR LOWER(ai.tags) LIKE LOWER(?) ESCAPE '\'))))
+		AND (? = '' OR f.extension = ?) AND (? = 0 OR f.drive_id = ?) AND (? = '' OR
+		EXISTS(SELECT 1 FROM drive_tags dt JOIN tags t ON t.id=dt.tag_id WHERE dt.drive_id=f.drive_id AND t.name=? COLLATE NOCASE) OR
+		EXISTS(SELECT 1 FROM file_tags ft JOIN tags t ON t.id=ft.tag_id WHERE ft.drive_id=f.drive_id AND ft.path=f.path AND t.name=? COLLATE NOCASE))`
+	args := []any{pattern, pattern, query, includeContent, pattern, query, includeContent, pattern, pattern, extension, extension, driveID, driveID, tag, tag, tag}
+	return where, args, query
+}
+
+func (c *Catalog) ExportFiles(query, extension, tag string, driveID int64, includeContent bool, handle func(ExportFile) error) error {
+	where, args, _ := searchFilter(query, extension, tag, driveID, includeContent)
+	rows, err := c.readDB.Query(`SELECT f.filename,COALESCE(NULLIF(d.display_name,''),d.label),f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),f.size,COALESCE(f.modified_at,''),
+		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN file_tags ft ON ft.tag_id=t.id WHERE ft.drive_id=f.drive_id AND ft.path=f.path ORDER BY t.name COLLATE NOCASE)),''),
+		COALESCE(a.summary,''),COALESCE(a.tags,'[]')
+		FROM files f JOIN drives d ON d.id=f.drive_id LEFT JOIN file_ai_analyses a ON a.drive_id=f.drive_id AND a.path=f.path AND a.source_size=f.size AND a.source_modified=COALESCE(f.modified_at,'')
+		WHERE `+where+` ORDER BY f.filename COLLATE NOCASE,f.path`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var file ExportFile
+		var tags, aiTags string
+		if err := rows.Scan(&file.Filename, &file.Drive, &file.Path, &file.Extension, &file.MIMEType, &file.Size, &file.Modified, &tags, &file.AISummary, &aiTags); err != nil {
+			return err
+		}
+		file.Tags = splitStoredTags(tags)
+		if json.Unmarshal([]byte(aiTags), &file.AITags) != nil {
+			file.AITags = []string{}
+		}
+		if err := handle(file); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }
 
 func (c *Catalog) Tags() ([]TagSummary, error) {

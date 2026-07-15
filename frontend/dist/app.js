@@ -117,6 +117,9 @@ async function showSettings() {
     $('#setting-backup-file-unlimited').checked = settings.backupFileUnlimited;
     $('#setting-backup-limit').value = settings.backupMaxMB;
     $('#setting-backup-unlimited').checked = settings.backupUnlimited;
+    $('#setting-catalog-export-enabled').checked = settings.catalogExportEnabled;
+    $('#setting-catalog-export-limit').value = settings.catalogExportMaxMB;
+    $('#setting-catalog-export-unlimited').checked = settings.catalogExportUnlimited;
     $('#setting-archive-enabled').checked = settings.archiveEnabled;
     $('#setting-max-snapshots').value = settings.maxSnapshots;
     $('#setting-scan-diagnostics-enabled').checked = settings.scanDiagnosticsEnabled;
@@ -293,7 +296,7 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 10,
+      version: 11,
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       aiEnabled: $('#setting-ai-enabled').checked,
       aiProvider: $('#setting-ai-provider').value,
@@ -316,6 +319,9 @@ async function saveSettings() {
       backupFileUnlimited: $('#setting-backup-file-unlimited').checked,
       backupMaxMB: Number($('#setting-backup-limit').value),
       backupUnlimited: $('#setting-backup-unlimited').checked,
+      catalogExportEnabled: $('#setting-catalog-export-enabled').checked,
+      catalogExportMaxMB: Number($('#setting-catalog-export-limit').value),
+      catalogExportUnlimited: $('#setting-catalog-export-unlimited').checked,
       archiveEnabled: $('#setting-archive-enabled').checked,
       maxSnapshots: Number($('#setting-max-snapshots').value),
       scanDiagnosticsEnabled: $('#setting-scan-diagnostics-enabled').checked,
@@ -481,6 +487,9 @@ function syncSettingsControls() {
   $('#create-backup-button').disabled = !backupEnabled;
   $('#inspect-backup-button').disabled = !backupEnabled;
   $('#restore-backup-button').disabled = !backupEnabled || !inspectedBackup;
+  const catalogExportEnabled = $('#setting-catalog-export-enabled').checked;
+  $('#setting-catalog-export-unlimited').disabled = !catalogExportEnabled;
+  $('#setting-catalog-export-limit').disabled = !catalogExportEnabled || $('#setting-catalog-export-unlimited').checked;
   const diagnosticsEnabled = $('#setting-scan-diagnostics-enabled').checked;
   $('#setting-scan-diagnostic-file-unlimited').disabled = !diagnosticsEnabled;
   $('#setting-scan-diagnostic-file-limit').disabled = !diagnosticsEnabled || $('#setting-scan-diagnostic-file-unlimited').checked;
@@ -664,6 +673,18 @@ async function loadLibrary(page = 1) {
   } catch (error) {
     $('#result-count').textContent = `Suche fehlgeschlagen: ${error}`;
   }
+}
+
+async function exportLibrary() {
+	const button = $('#export-library-button');
+	button.disabled = true;
+	$('#export-status').textContent = ' · Export wird erstellt …';
+	try {
+		const result = await window.go.main.App.ExportLibraryCSV($('#search-input').value, $('#extension-filter').value, $('#library-tag-filter').value, Number($('#drive-filter').value), $('#content-search').checked);
+		$('#export-status').textContent = result.cancelled ? '' : ` · ${result.files.toLocaleString('de-DE')} Dateien als ${formatBytes(result.bytes)} exportiert`;
+	} catch (error) {
+		$('#export-status').textContent = ` · Export fehlgeschlagen: ${error}`;
+	} finally { button.disabled = false; }
 }
 
 function driveName(drive) {
@@ -1412,7 +1433,7 @@ $('#restore-backup-button').addEventListener('click', restoreBackup);
 $('#save-ai-credential-button').addEventListener('click', saveAICredential);
 $('#clear-ai-credential-button').addEventListener('click', clearAICredential);
 $('#test-ai-provider-button').addEventListener('click', testAIProvider);
-['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#setting-ai-provider').addEventListener('change', () => {
@@ -1439,6 +1460,7 @@ $('#content-search').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));
 $('#duplicate-button').addEventListener('click', findDuplicates);
+$('#export-library-button').addEventListener('click', exportLibrary);
 $('#save-drive-button').addEventListener('click', saveDrive);
 $('#add-location-button').addEventListener('click', addStorageLocation);
 $('#analyze-file-button').addEventListener('click', analyzeCurrentFile);

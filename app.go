@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,9 +13,11 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/dennis/vaultapp/internal/ai"
 	"github.com/dennis/vaultapp/internal/backup"
@@ -139,6 +142,13 @@ type LibraryResult struct {
 	PageSize   int                   `json:"pageSize"`
 }
 
+type ExportResult struct {
+	Cancelled bool   `json:"cancelled"`
+	Path      string `json:"path"`
+	Files     int    `json:"files"`
+	Bytes     int64  `json:"bytes"`
+}
+
 func NewApp() *App { return &App{} }
 
 func (a *App) Startup(ctx context.Context) {
@@ -173,7 +183,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.36.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.37.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -201,6 +211,142 @@ func (a *App) SearchFiles(query, extension, tag string, driveID int64, includeCo
 		return LibraryResult{}, err
 	}
 	return LibraryResult{Files: result.Files, Extensions: result.Extensions, Total: result.Total, Page: page, PageSize: pageSize}, nil
+}
+
+func (a *App) ExportLibraryCSV(query, extension, tag string, driveID int64, includeContent bool) (ExportResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return ExportResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	settings := a.currentSettings()
+	if !settings.CatalogExportEnabled {
+		return ExportResult{}, fmt.Errorf("Katalogexport ist in den Einstellungen deaktiviert")
+	}
+	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+		Title:           "Gefilterten VaultApp-Katalog exportieren",
+		DefaultFilename: "VaultApp-Katalog-" + time.Now().Format("2006-01-02") + ".csv",
+		Filters:         []wailsruntime.FileFilter{{DisplayName: "CSV-Tabelle", Pattern: "*.csv"}},
+	})
+	if err != nil {
+		return ExportResult{}, err
+	}
+	if destination == "" {
+		return ExportResult{Cancelled: true}, nil
+	}
+	if !strings.EqualFold(filepath.Ext(destination), ".csv") {
+		destination += ".csv"
+	}
+	directory := filepath.Dir(destination)
+	temporary, err := os.CreateTemp(directory, ".vaultapp-export-*.tmp")
+	if err != nil {
+		return ExportResult{}, fmt.Errorf("Exportdatei vorbereiten: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	cleanup := func() {
+		_ = temporary.Close()
+		_ = os.Remove(temporaryPath)
+	}
+	maximum := int64(-1)
+	if !settings.CatalogExportUnlimited {
+		maximum = int64(settings.CatalogExportMaxMB) << 20
+	}
+	limited := &exportLimitWriter{writer: temporary, maximum: maximum}
+	if _, err := limited.Write([]byte{0xef, 0xbb, 0xbf}); err != nil {
+		cleanup()
+		return ExportResult{}, err
+	}
+	writer := csv.NewWriter(limited)
+	writer.Comma = ';'
+	header := []string{"Dateiname", "Datenträger", "Relativer Pfad", "Dateiendung", "MIME-Typ", "Größe (Bytes)", "Geändert", "Manuelle Tags", "KI-Tags", "KI-Zusammenfassung"}
+	if err := writer.Write(header); err != nil {
+		cleanup()
+		return ExportResult{}, err
+	}
+	result := ExportResult{Path: destination}
+	err = a.catalog.ExportFiles(query, extension, tag, driveID, includeContent, func(file database.ExportFile) error {
+		if err := writer.Write([]string{
+			csvSafe(file.Filename), csvSafe(file.Drive), csvSafe(file.Path), csvSafe(file.Extension), csvSafe(file.MIMEType), strconv.FormatInt(file.Size, 10),
+			csvSafe(file.Modified), csvSafe(strings.Join(file.Tags, ", ")), csvSafe(strings.Join(file.AITags, ", ")), csvSafe(file.AISummary),
+		}); err != nil {
+			return err
+		}
+		result.Files++
+		return nil
+	})
+	writer.Flush()
+	if err == nil {
+		err = writer.Error()
+	}
+	if err == nil {
+		err = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(temporaryPath)
+		return ExportResult{}, fmt.Errorf("Katalog exportieren: %w", err)
+	}
+	if err := os.Chmod(temporaryPath, 0o644); err != nil {
+		_ = os.Remove(temporaryPath)
+		return ExportResult{}, err
+	}
+	if err := replaceExportFile(temporaryPath, destination); err != nil {
+		_ = os.Remove(temporaryPath)
+		return ExportResult{}, fmt.Errorf("Exportdatei ablegen: %w", err)
+	}
+	result.Bytes = limited.written
+	return result, nil
+}
+
+type exportLimitWriter struct {
+	writer           io.Writer
+	written, maximum int64
+}
+
+func (w *exportLimitWriter) Write(data []byte) (int, error) {
+	if w.maximum >= 0 && w.written+int64(len(data)) > w.maximum {
+		return 0, fmt.Errorf("CSV-Export überschreitet das eingestellte Gesamtlimit von %d MB", w.maximum>>20)
+	}
+	n, err := w.writer.Write(data)
+	w.written += int64(n)
+	return n, err
+}
+
+func replaceExportFile(source, destination string) error {
+	if _, err := os.Stat(destination); os.IsNotExist(err) {
+		return os.Rename(source, destination)
+	} else if err != nil {
+		return err
+	}
+	backupFile, err := os.CreateTemp(filepath.Dir(destination), ".vaultapp-export-old-*.tmp")
+	if err != nil {
+		return err
+	}
+	backup := backupFile.Name()
+	if err := backupFile.Close(); err != nil {
+		_ = os.Remove(backup)
+		return err
+	}
+	if err := os.Remove(backup); err != nil {
+		return err
+	}
+	if err := os.Rename(destination, backup); err != nil {
+		return err
+	}
+	if err := os.Rename(source, destination); err != nil {
+		_ = os.Rename(backup, destination)
+		return err
+	}
+	_ = os.Remove(backup)
+	return nil
+}
+
+func csvSafe(value string) string {
+	trimmed := strings.TrimLeftFunc(value, unicode.IsSpace)
+	if trimmed != "" && strings.ContainsRune("=+-@", []rune(trimmed)[0]) {
+		return "'" + value
+	}
+	return value
 }
 
 func (a *App) GetTags() ([]database.TagSummary, error) {

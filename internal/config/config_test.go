@@ -36,6 +36,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if settings.AIVisionEnabled || settings.AIVisionModel != "gemma3:4b" || settings.AIVisionFileMB != 25 || settings.AIVisionTotalMB != 100 {
 		t.Fatalf("unexpected AI vision defaults: %+v", settings)
 	}
+	if !settings.CatalogExportEnabled || settings.CatalogExportMaxMB != 100 || settings.CatalogExportUnlimited {
+		t.Fatalf("unexpected catalog export defaults: %+v", settings)
+	}
 	settings.MaxSnapshots = 3
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)
@@ -43,6 +46,18 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	loaded, err := Load(path)
 	if err != nil || loaded.MaxSnapshots != 3 {
 		t.Fatalf("reloaded settings: %+v, %v", loaded, err)
+	}
+}
+
+func TestCatalogExportLimitValidation(t *testing.T) {
+	settings := Defaults()
+	settings.CatalogExportMaxMB = 0
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected catalog export limit validation error")
+	}
+	settings.CatalogExportMaxMB = 1_000_001
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected catalog export upper limit validation error")
 	}
 }
 
