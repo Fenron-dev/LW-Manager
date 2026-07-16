@@ -56,6 +56,37 @@ func TestWriteCatalogJSONStreamsValidDocument(t *testing.T) {
 	}
 }
 
+func TestWriteComparisonJSONStreamsValidReport(t *testing.T) {
+	var destination bytes.Buffer
+	header := comparisonJSONHeader{Format: "vaultapp.archive-comparison", Version: 1, ExportedAt: "2026-07-16T12:00:00Z"}
+	header.Snapshot = database.ComparisonSnapshot{Snapshot: database.Snapshot{ID: 12, CapturedAt: "2026-07-15T12:00:00Z", Tags: []string{"Referenz"}}, DriveID: 3, DriveName: "Fotos"}
+	header.Filters.Status = "modified"
+	count, err := writeComparisonJSON(&destination, header, func(handle func(database.ComparisonEntry) error) (int, error) {
+		entries := []database.ComparisonEntry{{Path: "Sommer/foto.jpg", Status: "modified", CurrentName: "foto.jpg", CurrentSize: 84, ArchiveName: "foto.jpg", ArchiveSize: 42}}
+		for _, entry := range entries {
+			if err := handle(entry); err != nil {
+				return 0, err
+			}
+		}
+		return len(entries), nil
+	})
+	if err != nil || count != 1 {
+		t.Fatalf("writeComparisonJSON = %d, %v", count, err)
+	}
+	var document struct {
+		Format   string                      `json:"format"`
+		Snapshot database.ComparisonSnapshot `json:"snapshot"`
+		Filters  map[string]any              `json:"filters"`
+		Entries  []database.ComparisonEntry  `json:"entries"`
+	}
+	if err := json.Unmarshal(destination.Bytes(), &document); err != nil {
+		t.Fatalf("invalid JSON %q: %v", destination.String(), err)
+	}
+	if document.Format != "vaultapp.archive-comparison" || document.Snapshot.DriveName != "Fotos" || document.Filters["status"] != "modified" || len(document.Entries) != 1 {
+		t.Fatalf("unexpected document: %+v", document)
+	}
+}
+
 func TestCSVSafePreventsSpreadsheetFormulas(t *testing.T) {
 	for _, value := range []string{"=1+1", "+SUM(A1:A2)", "-2+3", "@command", "  =hidden"} {
 		if got := csvSafe(value); got == value || got[0] != '\'' {

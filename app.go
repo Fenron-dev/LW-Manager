@@ -33,7 +33,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "0.51.0-dev"
+var appVersion = "0.52.0-dev"
 
 type App struct {
 	ctx        context.Context
@@ -1924,6 +1924,130 @@ func (a *App) CompareSnapshotDirectory(snapshotID int64, directory, status strin
 	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
 	defer cancel()
 	return a.catalog.CompareDirectory(ctx, snapshotID, directory, status)
+}
+
+type comparisonJSONHeader struct {
+	Format     string                      `json:"format"`
+	Version    int                         `json:"version"`
+	ExportedAt string                      `json:"exportedAt"`
+	Snapshot   database.ComparisonSnapshot `json:"snapshot"`
+	Filters    struct {
+		Status string `json:"status"`
+		Query  string `json:"query"`
+	} `json:"filters"`
+}
+
+func writeComparisonJSON(writer io.Writer, header comparisonJSONHeader, export func(func(database.ComparisonEntry) error) (int, error)) (int, error) {
+	metadata, err := json.MarshalIndent(header, "", "  ")
+	if err != nil {
+		return 0, err
+	}
+	metadata = metadata[:len(metadata)-1]
+	if _, err := writer.Write(append(metadata, []byte(",\n  \"entries\": [")...)); err != nil {
+		return 0, err
+	}
+	written := 0
+	count, err := export(func(entry database.ComparisonEntry) error {
+		data, err := json.Marshal(entry)
+		if err != nil {
+			return err
+		}
+		separator := "\n    "
+		if written > 0 {
+			separator = ",\n    "
+		}
+		if _, err := io.WriteString(writer, separator); err != nil {
+			return err
+		}
+		if _, err := writer.Write(data); err != nil {
+			return err
+		}
+		written++
+		return nil
+	})
+	if err != nil {
+		return written, err
+	}
+	if count != written {
+		return written, fmt.Errorf("Archivvergleich lieferte eine inkonsistente Eintragszahl")
+	}
+	if written > 0 {
+		_, err = io.WriteString(writer, "\n  ]\n}\n")
+	} else {
+		_, err = io.WriteString(writer, "]\n}\n")
+	}
+	return written, err
+}
+
+func (a *App) ExportSnapshotComparisonJSON(snapshotID int64, status, query string) (ExportResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return ExportResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	settings := a.currentSettings()
+	if !settings.ComparisonExportEnabled {
+		return ExportResult{}, fmt.Errorf("Export von Archivvergleichen ist in den Einstellungen deaktiviert")
+	}
+	snapshot, err := a.catalog.ComparisonSnapshot(snapshotID)
+	if err != nil {
+		return ExportResult{}, fmt.Errorf("Archivstand laden: %w", err)
+	}
+	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+		Title:           "Archivvergleich als JSON exportieren",
+		DefaultFilename: "VaultApp-Archivvergleich-" + time.Now().Format("2006-01-02") + ".json",
+		Filters:         []wailsruntime.FileFilter{{DisplayName: "JSON-Bericht", Pattern: "*.json"}},
+	})
+	if err != nil {
+		return ExportResult{}, err
+	}
+	if destination == "" {
+		return ExportResult{Cancelled: true}, nil
+	}
+	if !strings.EqualFold(filepath.Ext(destination), ".json") {
+		destination += ".json"
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".vaultapp-export-*.tmp")
+	if err != nil {
+		return ExportResult{}, fmt.Errorf("Exportdatei vorbereiten: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	cleanup := func() {
+		_ = temporary.Close()
+		_ = os.Remove(temporaryPath)
+	}
+	maximum := int64(-1)
+	if !settings.ComparisonExportUnlimited {
+		maximum = int64(settings.ComparisonExportMaxMB) << 20
+	}
+	limited := &exportLimitWriter{writer: temporary, maximum: maximum, label: "Archivvergleich-Export"}
+	header := comparisonJSONHeader{Format: "vaultapp.archive-comparison", Version: 1, ExportedAt: time.Now().UTC().Format(time.RFC3339), Snapshot: snapshot}
+	header.Filters.Status = strings.ToLower(strings.TrimSpace(status))
+	header.Filters.Query = strings.TrimSpace(query)
+	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Minute)
+	defer cancel()
+	result := ExportResult{Path: destination}
+	result.Files, err = writeComparisonJSON(limited, header, func(handle func(database.ComparisonEntry) error) (int, error) {
+		return a.catalog.ExportComparison(ctx, snapshotID, status, query, handle)
+	})
+	if err == nil {
+		err = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(temporaryPath)
+		return ExportResult{}, fmt.Errorf("Archivvergleich exportieren: %w", err)
+	}
+	if err := os.Chmod(temporaryPath, 0o644); err != nil {
+		cleanup()
+		return ExportResult{}, err
+	}
+	if err := replaceExportFile(temporaryPath, destination); err != nil {
+		cleanup()
+		return ExportResult{}, fmt.Errorf("Exportdatei ablegen: %w", err)
+	}
+	result.Bytes = limited.written
+	return result, nil
 }
 
 // SelectAndScan catalogs metadata only. Source files are never modified.

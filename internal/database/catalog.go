@@ -201,6 +201,12 @@ type Snapshot struct {
 	Tags       []string `json:"tags"`
 }
 
+type ComparisonSnapshot struct {
+	Snapshot
+	DriveID   int64  `json:"driveId"`
+	DriveName string `json:"driveName"`
+}
+
 type ArchivedFile struct {
 	Filename  string `json:"filename"`
 	Path      string `json:"path"`
@@ -1085,6 +1091,57 @@ func (c *Catalog) CompareSnapshot(ctx context.Context, snapshotID int64, status,
 		result.Entries = append(result.Entries, entry)
 	}
 	return result, rows.Err()
+}
+
+func (c *Catalog) ComparisonSnapshot(snapshotID int64) (ComparisonSnapshot, error) {
+	var result ComparisonSnapshot
+	var tags string
+	err := c.readDB.QueryRow(`SELECT s.id,s.captured_at,s.file_count,s.total_bytes,s.protected,COALESCE(s.note,''),s.drive_id,
+		COALESCE(NULLIF(d.display_name,''),d.label),
+		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN snapshot_tags st ON st.tag_id=t.id WHERE st.snapshot_id=s.id ORDER BY t.name COLLATE NOCASE)),'')
+		FROM scan_snapshots s JOIN drives d ON d.id=s.drive_id WHERE s.id=?`, snapshotID).Scan(
+		&result.ID, &result.CapturedAt, &result.FileCount, &result.TotalBytes, &result.Protected, &result.Note,
+		&result.DriveID, &result.DriveName, &tags)
+	if err != nil {
+		return result, err
+	}
+	result.Tags = splitStoredTags(tags)
+	return result, nil
+}
+
+func (c *Catalog) ExportComparison(ctx context.Context, snapshotID int64, status, query string, handle func(ComparisonEntry) error) (int, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "" && status != "added" && status != "removed" && status != "modified" && status != "unchanged" {
+		return 0, fmt.Errorf("ungültiger Vergleichsfilter")
+	}
+	const comparison = `
+		SELECT f.path,
+		 CASE WHEN a.id IS NULL THEN 'added' WHEN f.size<>a.size OR COALESCE(f.modified_at,'')<>COALESCE(a.modified_at,'') THEN 'modified' ELSE 'unchanged' END status,
+		 f.filename current_name,f.size current_size,COALESCE(f.modified_at,'') current_modified,
+		 COALESCE(a.filename,'') archive_name,COALESCE(a.size,0) archive_size,COALESCE(a.modified_at,'') archive_modified
+		FROM files f JOIN scan_snapshots s ON s.id=? AND s.drive_id=f.drive_id LEFT JOIN archived_files a ON a.snapshot_id=s.id AND a.path=f.path
+		UNION ALL
+		SELECT a.path,'removed','',0,'',a.filename,a.size,COALESCE(a.modified_at,'')
+		FROM archived_files a JOIN scan_snapshots s ON s.id=a.snapshot_id LEFT JOIN files f ON f.drive_id=s.drive_id AND f.path=a.path
+		WHERE a.snapshot_id=? AND f.id IS NULL`
+	pattern := "%" + escapeLike(strings.TrimSpace(query)) + "%"
+	rows, err := c.readDB.QueryContext(ctx, "SELECT path,status,current_name,current_size,current_modified,archive_name,archive_size,archive_modified FROM ("+comparison+") WHERE (?='' OR status=?) AND LOWER(path) LIKE LOWER(?) ESCAPE '\\' ORDER BY path COLLATE NOCASE", snapshotID, snapshotID, status, status, pattern)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var entry ComparisonEntry
+		if err := rows.Scan(&entry.Path, &entry.Status, &entry.CurrentName, &entry.CurrentSize, &entry.CurrentModified, &entry.ArchiveName, &entry.ArchiveSize, &entry.ArchiveModified); err != nil {
+			return count, err
+		}
+		if err := handle(entry); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, rows.Err()
 }
 
 func (c *Catalog) CompareDirectory(ctx context.Context, snapshotID int64, directory, status string) ([]ComparisonTreeEntry, error) {

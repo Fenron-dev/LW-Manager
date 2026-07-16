@@ -229,6 +229,20 @@ main > *,
     padding: 22px 16px;
   }
 
+  .comparison-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .comparison-actions {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .comparison-actions small {
+    flex-basis: 100%;
+  }
+
   .searchbar,
   .compare-controls,
   .duplicate-toolbar {

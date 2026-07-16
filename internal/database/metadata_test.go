@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -320,6 +321,39 @@ func TestProtectedSnapshotSurvivesCleanupAndDelete(t *testing.T) {
 	}
 	if err := catalog.DeleteSnapshot(protectedID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExportComparisonStreamsFilteredEntriesAndSnapshotMetadata(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	root := t.TempDir()
+	scanMetadataTestDrive(t, catalog, root, 0, "one.txt")
+	scanMetadataTestDrive(t, catalog, root, 0, "two.txt")
+	drives, err := catalog.Drives()
+	if err != nil || len(drives) != 1 {
+		t.Fatalf("drives = %#v, %v", drives, err)
+	}
+	if err := catalog.UpdateDrive(drives[0].ID, "Archivmedium", "", "", "", "", "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := catalog.Snapshots(drives[0].ID)
+	if err != nil || len(snapshots) != 1 {
+		t.Fatalf("snapshots = %#v, %v", snapshots, err)
+	}
+	if err := catalog.UpdateSnapshot(snapshots[0].ID, true, "Referenzstand", []string{"Freigabe"}); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := catalog.ComparisonSnapshot(snapshots[0].ID)
+	if err != nil || metadata.DriveName != "Archivmedium" || metadata.Note != "Referenzstand" || !metadata.Protected || !reflect.DeepEqual(metadata.Tags, []string{"Freigabe"}) {
+		t.Fatalf("comparison snapshot = %#v, %v", metadata, err)
+	}
+	var entries []ComparisonEntry
+	count, err := catalog.ExportComparison(context.Background(), snapshots[0].ID, "removed", "one", func(entry ComparisonEntry) error {
+		entries = append(entries, entry)
+		return nil
+	})
+	if err != nil || count != 1 || len(entries) != 1 || entries[0].Path != "one.txt" || entries[0].Status != "removed" {
+		t.Fatalf("comparison export = %#v, %d, %v", entries, count, err)
 	}
 }
 
