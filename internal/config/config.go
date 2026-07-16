@@ -104,6 +104,9 @@ type Settings struct {
 	CatalogExportEnabled             bool          `json:"catalogExportEnabled"`
 	CatalogExportMaxMB               int           `json:"catalogExportMaxMB"`
 	CatalogExportUnlimited           bool          `json:"catalogExportUnlimited"`
+	CatalogJSONExportEnabled         bool          `json:"catalogJSONExportEnabled"`
+	CatalogJSONExportMaxMB           int           `json:"catalogJSONExportMaxMB"`
+	CatalogJSONExportUnlimited       bool          `json:"catalogJSONExportUnlimited"`
 	DuplicateCheckEnabled            bool          `json:"duplicateCheckEnabled"`
 	DuplicateFileMB                  int           `json:"duplicateFileMB"`
 	DuplicateFileUnlimited           bool          `json:"duplicateFileUnlimited"`
@@ -119,7 +122,7 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 19, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 20, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{}, ScanProfiles: []ScanProfile{},
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
@@ -131,6 +134,7 @@ func Defaults() Settings {
 		AIProvider: "ollama", AIEndpoint: "http://127.0.0.1:11434", AIModel: "qwen2.5:1.5b", AIFileMB: 2, AITotalMB: 100, AITimeoutSeconds: 30,
 		AIVisionModel: "gemma3:4b", AIVisionFileMB: 25, AIVisionTotalMB: 100,
 		CatalogExportEnabled: true, CatalogExportMaxMB: 100,
+		CatalogJSONExportEnabled: true, CatalogJSONExportMaxMB: 100,
 		DuplicateCheckEnabled: true, DuplicateFileMB: 1024, DuplicateTotalMB: 2048,
 		DuplicateQuarantineEnabled: true, DuplicateQuarantineFileMB: 10_240, DuplicateQuarantineTotalMB: 102_400,
 	}
@@ -161,7 +165,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 19
+	settings.Version = 20
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -291,7 +295,10 @@ func (settings Settings) Validate() error {
 		return fmt.Errorf("Vision-Gesamtlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.CatalogExportMaxMB < 1 || settings.CatalogExportMaxMB > 1_000_000 {
-		return fmt.Errorf("Katalogexport-Limit muss zwischen 1 und 1.000.000 MB liegen")
+		return fmt.Errorf("CSV-Katalogexport-Limit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.CatalogJSONExportMaxMB < 1 || settings.CatalogJSONExportMaxMB > 1_000_000 {
+		return fmt.Errorf("JSON-Katalogexport-Limit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.DuplicateFileMB < 1 || settings.DuplicateFileMB > 1_000_000 {
 		return fmt.Errorf("Duplikat-Dateilimit muss zwischen 1 und 1.000.000 MB liegen")

@@ -119,9 +119,16 @@ type SearchResult struct {
 }
 
 type ExportFile struct {
-	Filename, Drive, Path, Extension, MIMEType, Modified, AISummary string
-	Size                                                            int64
-	Tags, AITags                                                    []string
+	Filename  string   `json:"filename"`
+	Drive     string   `json:"drive"`
+	Path      string   `json:"path"`
+	Extension string   `json:"extension"`
+	MIMEType  string   `json:"mimeType"`
+	Size      int64    `json:"size"`
+	Modified  string   `json:"modified"`
+	Tags      []string `json:"tags"`
+	AITags    []string `json:"aiTags"`
+	AISummary string   `json:"aiSummary"`
 }
 
 type TagSummary struct {

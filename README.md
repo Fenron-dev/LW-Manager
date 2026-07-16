@@ -40,7 +40,7 @@ Für den Volltextindex gelten drei unabhängige Grenzen: Rohdaten pro Datei, gel
 
 Ab Version 0.49.0-dev lassen sich unter **Einstellungen → Scanprofile** wiederverwendbare Kombinationen aus Ausschlussregeln, Bild-/EXIF-Analyse und Volltextindex anlegen. Im Bearbeiten-Dialog eines Datenträgers wird das Profil zugeordnet und beim nächsten Scan automatisch angewendet. Das tatsächlich verwendete Profil erscheint vor und während des Scans sowie im Diagnosebericht. Sämtliche Datei- und Gesamtbudgets bleiben globale Obergrenzen einschließlich ihrer Unbegrenzt-Schalter; ein Profil kann diese Grenzen daher nicht unbemerkt erhöhen. Wird ein zugeordnetes Profil später gelöscht, fällt der Datenträger sicher auf die globalen Einstellungen zurück.
 
-Die aktuell gefilterte Bibliotheksansicht lässt sich als UTF-8-CSV exportieren. Enthalten sind Dateiname, Datenträger, relativer Pfad, Typ, Größe, Änderungsdatum, manuelle Tags und vorhandene KI-Metadaten; Originaldateien werden nicht kopiert. Der Export wird zeilenweise geschrieben, schützt Tabellenprogramme vor Formelausführung durch präparierte Textfelder und landet nur am ausdrücklich gewählten Ziel. Unter **Einstellungen → Katalogexport** lässt sich die Funktion deaktivieren und die maximale CSV-Gesamtgröße begrenzen oder auf unbegrenzt setzen.
+Die aktuell gefilterte Bibliotheksansicht lässt sich als UTF-8-CSV und ab Version 0.51.0-dev zusätzlich als maschinenlesbares JSON exportieren. Enthalten sind Dateiname, Datenträger, relativer Pfad, Typ, Größe, Änderungsdatum, manuelle Tags und vorhandene KI-Metadaten; im JSON werden außerdem Formatversion, Exportzeitpunkt und die verwendeten Filter festgehalten. Originaldateien werden nicht kopiert. Beide Exporte werden fortlaufend geschrieben und landen nur am ausdrücklich gewählten Ziel; die CSV schützt Tabellenprogramme zusätzlich vor Formelausführung durch präparierte Textfelder. Unter **Einstellungen → Katalogexport** lassen sich beide Formate getrennt deaktivieren und ihre jeweilige maximale Gesamtgröße begrenzen oder auf unbegrenzt setzen.
 
 Im Tab **Datenträger** erkennt VaultApp angeschlossene externe Volumes automatisch. Bereits katalogisierte Medien werden über ihre Volume-ID beziehungsweise ihren Einbindungspfad zugeordnet und können direkt erneut gescannt werden. Die Erkennung lässt sich in den Einstellungen abschalten und belegt selbst keinen Cache- oder Katalogspeicher; der manuelle Ordnerdialog bleibt unabhängig davon verfügbar.
 
@@ -101,10 +101,10 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
    - Portable Pakete für macOS ARM/Intel, Windows und Linux dauerhaft anhängen und mit SHA-256-Prüfsummen versehen – umgesetzt.
    - Entwicklungsbuilds und stabile Releases klar trennen; ein Release bleibt eine ausdrücklich gestartete Aktion – umgesetzt.
 
-6. **Erweiterte Exporte und Berichte**
-   - Gefilterten Katalog zusätzlich als JSON exportieren.
+6. **Erweiterte Exporte und Berichte – teilweise umgesetzt in 0.51.0-dev**
+   - Gefilterten Katalog zusätzlich als JSON exportieren – umgesetzt.
    - Archivvergleiche als maschinenlesbaren Bericht und druckbare Änderungsübersicht exportieren.
-   - Exportarten einzeln aktivierbar machen und ihre maximale Gesamtgröße jeweils mit Unbegrenzt-Schalter steuern.
+   - Exportarten einzeln aktivierbar machen und ihre maximale Gesamtgröße jeweils mit Unbegrenzt-Schalter steuern – für CSV und JSON umgesetzt, für die Vergleichsberichte noch offen.
 
 Für neue Funktionen gilt weiterhin: Aktivierung und Ressourcenlimits werden unter **Einstellungen** angeboten, wenn Dateien gelesen oder Daten dauerhaft im Vault gespeichert werden. Nicht verändernde Funktionen ohne eigenen Speicherverbrauch benötigen kein künstliches Speicherlimit.
 

@@ -33,7 +33,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "0.50.0-dev"
+var appVersion = "0.51.0-dev"
 
 type App struct {
 	ctx        context.Context
@@ -284,7 +284,7 @@ func (a *App) ExportLibraryCSV(query, extension, tag string, driveID int64, incl
 	if !settings.CatalogExportUnlimited {
 		maximum = int64(settings.CatalogExportMaxMB) << 20
 	}
-	limited := &exportLimitWriter{writer: temporary, maximum: maximum}
+	limited := &exportLimitWriter{writer: temporary, maximum: maximum, label: "CSV-Export"}
 	if _, err := limited.Write([]byte{0xef, 0xbb, 0xbf}); err != nil {
 		cleanup()
 		return ExportResult{}, err
@@ -333,14 +333,139 @@ func (a *App) ExportLibraryCSV(query, extension, tag string, driveID int64, incl
 	return result, nil
 }
 
+type catalogJSONHeader struct {
+	Format     string `json:"format"`
+	Version    int    `json:"version"`
+	ExportedAt string `json:"exportedAt"`
+	Filters    struct {
+		Query          string `json:"query"`
+		Extension      string `json:"extension"`
+		Tag            string `json:"tag"`
+		DriveID        int64  `json:"driveId"`
+		IncludeContent bool   `json:"includeContent"`
+	} `json:"filters"`
+}
+
+func writeCatalogJSON(writer io.Writer, header catalogJSONHeader, export func(func(database.ExportFile) error) error) (int, error) {
+	metadata, err := json.MarshalIndent(header, "", "  ")
+	if err != nil {
+		return 0, err
+	}
+	metadata = metadata[:len(metadata)-1]
+	if _, err := writer.Write(append(metadata, []byte(",\n  \"files\": [")...)); err != nil {
+		return 0, err
+	}
+	count := 0
+	err = export(func(file database.ExportFile) error {
+		data, err := json.Marshal(file)
+		if err != nil {
+			return err
+		}
+		separator := "\n    "
+		if count > 0 {
+			separator = ",\n    "
+		}
+		if _, err := io.WriteString(writer, separator); err != nil {
+			return err
+		}
+		if _, err := writer.Write(data); err != nil {
+			return err
+		}
+		count++
+		return nil
+	})
+	if err != nil {
+		return count, err
+	}
+	if count > 0 {
+		_, err = io.WriteString(writer, "\n  ]\n}\n")
+	} else {
+		_, err = io.WriteString(writer, "]\n}\n")
+	}
+	return count, err
+}
+
+func (a *App) ExportLibraryJSON(query, extension, tag string, driveID int64, includeContent bool) (ExportResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return ExportResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	settings := a.currentSettings()
+	if !settings.CatalogJSONExportEnabled {
+		return ExportResult{}, fmt.Errorf("JSON-Katalogexport ist in den Einstellungen deaktiviert")
+	}
+	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+		Title:           "Gefilterten VaultApp-Katalog als JSON exportieren",
+		DefaultFilename: "VaultApp-Katalog-" + time.Now().Format("2006-01-02") + ".json",
+		Filters:         []wailsruntime.FileFilter{{DisplayName: "JSON-Daten", Pattern: "*.json"}},
+	})
+	if err != nil {
+		return ExportResult{}, err
+	}
+	if destination == "" {
+		return ExportResult{Cancelled: true}, nil
+	}
+	if !strings.EqualFold(filepath.Ext(destination), ".json") {
+		destination += ".json"
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".vaultapp-export-*.tmp")
+	if err != nil {
+		return ExportResult{}, fmt.Errorf("Exportdatei vorbereiten: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	cleanup := func() {
+		_ = temporary.Close()
+		_ = os.Remove(temporaryPath)
+	}
+	maximum := int64(-1)
+	if !settings.CatalogJSONExportUnlimited {
+		maximum = int64(settings.CatalogJSONExportMaxMB) << 20
+	}
+	limited := &exportLimitWriter{writer: temporary, maximum: maximum, label: "JSON-Export"}
+	header := catalogJSONHeader{Format: "vaultapp.catalog", Version: 1, ExportedAt: time.Now().UTC().Format(time.RFC3339)}
+	header.Filters.Query = query
+	header.Filters.Extension = extension
+	header.Filters.Tag = tag
+	header.Filters.DriveID = driveID
+	header.Filters.IncludeContent = includeContent
+	result := ExportResult{Path: destination}
+	result.Files, err = writeCatalogJSON(limited, header, func(handle func(database.ExportFile) error) error {
+		return a.catalog.ExportFiles(query, extension, tag, driveID, includeContent, handle)
+	})
+	if err == nil {
+		err = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(temporaryPath)
+		return ExportResult{}, fmt.Errorf("Katalog exportieren: %w", err)
+	}
+	if err := os.Chmod(temporaryPath, 0o644); err != nil {
+		cleanup()
+		return ExportResult{}, err
+	}
+	if err := replaceExportFile(temporaryPath, destination); err != nil {
+		cleanup()
+		return ExportResult{}, fmt.Errorf("Exportdatei ablegen: %w", err)
+	}
+	result.Bytes = limited.written
+	return result, nil
+}
+
 type exportLimitWriter struct {
 	writer           io.Writer
 	written, maximum int64
+	label            string
 }
 
 func (w *exportLimitWriter) Write(data []byte) (int, error) {
 	if w.maximum >= 0 && w.written+int64(len(data)) > w.maximum {
-		return 0, fmt.Errorf("CSV-Export überschreitet das eingestellte Gesamtlimit von %d MB", w.maximum>>20)
+		label := w.label
+		if label == "" {
+			label = "Export"
+		}
+		return 0, fmt.Errorf("%s überschreitet das eingestellte Gesamtlimit von %d MB", label, w.maximum>>20)
 	}
 	n, err := w.writer.Write(data)
 	w.written += int64(n)

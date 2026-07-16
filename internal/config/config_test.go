@@ -45,6 +45,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.CatalogExportEnabled || settings.CatalogExportMaxMB != 100 || settings.CatalogExportUnlimited {
 		t.Fatalf("unexpected catalog export defaults: %+v", settings)
 	}
+	if !settings.CatalogJSONExportEnabled || settings.CatalogJSONExportMaxMB != 100 || settings.CatalogJSONExportUnlimited {
+		t.Fatalf("unexpected JSON catalog export defaults: %+v", settings)
+	}
 	if !settings.DuplicateCheckEnabled || settings.DuplicateFileMB != 1024 || settings.DuplicateTotalMB != 2048 || settings.DuplicateFileUnlimited || settings.DuplicateTotalUnlimited {
 		t.Fatalf("unexpected duplicate check defaults: %+v", settings)
 	}
@@ -111,6 +114,15 @@ func TestCatalogExportLimitValidation(t *testing.T) {
 	settings.CatalogExportMaxMB = 1_000_001
 	if err := settings.Validate(); err == nil {
 		t.Fatal("expected catalog export upper limit validation error")
+	}
+	settings = Defaults()
+	settings.CatalogJSONExportMaxMB = 0
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected JSON catalog export lower limit validation error")
+	}
+	settings.CatalogJSONExportMaxMB = 1_000_001
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected JSON catalog export upper limit validation error")
 	}
 }
 
