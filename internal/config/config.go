@@ -110,6 +110,9 @@ type Settings struct {
 	ComparisonExportEnabled          bool          `json:"comparisonExportEnabled"`
 	ComparisonExportMaxMB            int           `json:"comparisonExportMaxMB"`
 	ComparisonExportUnlimited        bool          `json:"comparisonExportUnlimited"`
+	ComparisonPrintEnabled           bool          `json:"comparisonPrintEnabled"`
+	ComparisonPrintMaxMB             int           `json:"comparisonPrintMaxMB"`
+	ComparisonPrintUnlimited         bool          `json:"comparisonPrintUnlimited"`
 	DuplicateCheckEnabled            bool          `json:"duplicateCheckEnabled"`
 	DuplicateFileMB                  int           `json:"duplicateFileMB"`
 	DuplicateFileUnlimited           bool          `json:"duplicateFileUnlimited"`
@@ -125,7 +128,7 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 21, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 22, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{}, ScanProfiles: []ScanProfile{},
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
@@ -139,6 +142,7 @@ func Defaults() Settings {
 		CatalogExportEnabled: true, CatalogExportMaxMB: 100,
 		CatalogJSONExportEnabled: true, CatalogJSONExportMaxMB: 100,
 		ComparisonExportEnabled: true, ComparisonExportMaxMB: 100,
+		ComparisonPrintEnabled: true, ComparisonPrintMaxMB: 100,
 		DuplicateCheckEnabled: true, DuplicateFileMB: 1024, DuplicateTotalMB: 2048,
 		DuplicateQuarantineEnabled: true, DuplicateQuarantineFileMB: 10_240, DuplicateQuarantineTotalMB: 102_400,
 	}
@@ -169,7 +173,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 21
+	settings.Version = 22
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -306,6 +310,9 @@ func (settings Settings) Validate() error {
 	}
 	if settings.ComparisonExportMaxMB < 1 || settings.ComparisonExportMaxMB > 1_000_000 {
 		return fmt.Errorf("Archivvergleich-Exportlimit muss zwischen 1 und 1.000.000 MB liegen")
+	}
+	if settings.ComparisonPrintMaxMB < 1 || settings.ComparisonPrintMaxMB > 1_000_000 {
+		return fmt.Errorf("Druckbericht-Exportlimit muss zwischen 1 und 1.000.000 MB liegen")
 	}
 	if settings.DuplicateFileMB < 1 || settings.DuplicateFileMB > 1_000_000 {
 		return fmt.Errorf("Duplikat-Dateilimit muss zwischen 1 und 1.000.000 MB liegen")

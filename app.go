@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"os"
 	"os/exec"
@@ -33,7 +34,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "0.52.0-dev"
+var appVersion = "0.53.0-dev"
 
 type App struct {
 	ctx        context.Context
@@ -2037,6 +2038,149 @@ func (a *App) ExportSnapshotComparisonJSON(snapshotID int64, status, query strin
 	if err != nil {
 		_ = os.Remove(temporaryPath)
 		return ExportResult{}, fmt.Errorf("Archivvergleich exportieren: %w", err)
+	}
+	if err := os.Chmod(temporaryPath, 0o644); err != nil {
+		cleanup()
+		return ExportResult{}, err
+	}
+	if err := replaceExportFile(temporaryPath, destination); err != nil {
+		cleanup()
+		return ExportResult{}, fmt.Errorf("Exportdatei ablegen: %w", err)
+	}
+	result.Bytes = limited.written
+	return result, nil
+}
+
+type comparisonPrintHeader struct {
+	ExportedAt string
+	Snapshot   database.ComparisonSnapshot
+	Counts     database.ComparisonCounts
+	Status     string
+	Query      string
+}
+
+func formatReportBytes(size int64) string {
+	const unit = int64(1024)
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
+	}
+	value := float64(size)
+	units := []string{"KB", "MB", "GB", "TB"}
+	for _, label := range units {
+		value /= 1024
+		if value < 1024 || label == "TB" {
+			return fmt.Sprintf("%.1f %s", value, label)
+		}
+	}
+	return fmt.Sprintf("%d B", size)
+}
+
+func writeComparisonHTML(writer io.Writer, header comparisonPrintHeader, export func(func(database.ComparisonEntry) error) (int, error)) (int, error) {
+	escape := html.EscapeString
+	statusLabels := map[string]string{"": "Alle Status", "added": "Neu", "removed": "Entfernt", "modified": "Geändert", "unchanged": "Unverändert"}
+	intro := `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>VaultApp Archivvergleich</title><style>
+@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#17202a;background:#fff;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}h1{margin:0 0 4px;font-size:24px}h2{margin:24px 0 8px;font-size:16px}.meta{color:#52606d}.facts,.counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0}.card{padding:10px;border:1px solid #ccd5df;border-radius:7px}.card strong,.card span{display:block}.card span{color:#52606d;font-size:10px}.counts .added{background:#ddf7ed}.counts .removed{background:#fde5e7}.counts .modified{background:#fff2c7}.counts .unchanged{background:#e9eef4}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:7px 8px;border:1px solid #cfd8e3;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#e8eef5}.path{width:31%}.status{width:10%;font-weight:700}.side{width:29.5%}tr.added{background:#e5f8f1}tr.removed{background:#fdebed}tr.modified{background:#fff5d7}tr.unchanged{background:#f1f4f7}.detail{display:block;color:#52606d;font-size:10px}footer{margin-top:14px;color:#687786;font-size:10px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead{display:table-header-group}tr{break-inside:avoid}}</style></head><body>`
+	if _, err := io.WriteString(writer, intro); err != nil {
+		return 0, err
+	}
+	title := fmt.Sprintf(`<header><h1>VaultApp Archivvergleich</h1><div class="meta">Erstellt: %s</div></header><section class="facts"><div class="card"><strong>%s</strong><span>Datenträger</span></div><div class="card"><strong>%s</strong><span>Archivstand</span></div><div class="card"><strong>%s</strong><span>Statusfilter</span></div><div class="card"><strong>%s</strong><span>Pfadfilter</span></div></section>`,
+		escape(header.ExportedAt), escape(header.Snapshot.DriveName), escape(header.Snapshot.CapturedAt), escape(statusLabels[header.Status]), escape(defaultReportValue(header.Query, "Keiner")))
+	if _, err := io.WriteString(writer, title); err != nil {
+		return 0, err
+	}
+	counts := fmt.Sprintf(`<section class="counts"><div class="card added"><strong>%d</strong><span>Neu</span></div><div class="card removed"><strong>%d</strong><span>Entfernt</span></div><div class="card modified"><strong>%d</strong><span>Geändert</span></div><div class="card unchanged"><strong>%d</strong><span>Unverändert</span></div></section><div class="meta">%d gefilterte Einträge · Archivbemerkung: %s · Tags: %s · Geschützt: %s</div><h2>Vergleichseinträge</h2><table><thead><tr><th class="path">Pfad</th><th class="status">Status</th><th class="side">Aktueller Stand</th><th class="side">Archivstand</th></tr></thead><tbody>`,
+		header.Counts.Added, header.Counts.Removed, header.Counts.Modified, header.Counts.Unchanged, header.Counts.Total,
+		escape(defaultReportValue(header.Snapshot.Note, "Keine")), escape(defaultReportValue(strings.Join(header.Snapshot.Tags, ", "), "Keine")), map[bool]string{true: "Ja", false: "Nein"}[header.Snapshot.Protected])
+	if _, err := io.WriteString(writer, counts); err != nil {
+		return 0, err
+	}
+	written := 0
+	count, err := export(func(entry database.ComparisonEntry) error {
+		current := "Nicht vorhanden"
+		if entry.CurrentName != "" {
+			current = fmt.Sprintf("<strong>%s</strong><span class=\"detail\">%s · %s</span>", escape(entry.CurrentName), escape(formatReportBytes(entry.CurrentSize)), escape(entry.CurrentModified))
+		}
+		archived := "Nicht vorhanden"
+		if entry.ArchiveName != "" {
+			archived = fmt.Sprintf("<strong>%s</strong><span class=\"detail\">%s · %s</span>", escape(entry.ArchiveName), escape(formatReportBytes(entry.ArchiveSize)), escape(entry.ArchiveModified))
+		}
+		row := fmt.Sprintf(`<tr class="%s"><td>%s</td><td class="status">%s</td><td>%s</td><td>%s</td></tr>`, escape(entry.Status), escape(entry.Path), escape(statusLabels[entry.Status]), current, archived)
+		if _, err := io.WriteString(writer, row); err != nil {
+			return err
+		}
+		written++
+		return nil
+	})
+	if err != nil {
+		return written, err
+	}
+	if count != written {
+		return written, fmt.Errorf("Archivvergleich lieferte eine inkonsistente Eintragszahl")
+	}
+	_, err = io.WriteString(writer, `</tbody></table><footer>Erzeugt mit VaultApp. Dieser Bericht enthält ausschließlich Katalogmetadaten, keine Originaldateien.</footer></body></html>`)
+	return written, err
+}
+
+func defaultReportValue(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func (a *App) ExportSnapshotComparisonHTML(snapshotID int64, status, query string) (ExportResult, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return ExportResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	settings := a.currentSettings()
+	if !settings.ComparisonPrintEnabled {
+		return ExportResult{}, fmt.Errorf("Druckbare Archivvergleiche sind in den Einstellungen deaktiviert")
+	}
+	snapshot, err := a.catalog.ComparisonSnapshot(snapshotID)
+	if err != nil {
+		return ExportResult{}, fmt.Errorf("Archivstand laden: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Minute)
+	defer cancel()
+	counts, err := a.catalog.ComparisonCounts(ctx, snapshotID, status, query)
+	if err != nil {
+		return ExportResult{}, fmt.Errorf("Vergleich zusammenfassen: %w", err)
+	}
+	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{Title: "Druckbaren Archivvergleich exportieren", DefaultFilename: "VaultApp-Archivvergleich-" + time.Now().Format("2006-01-02") + ".html", Filters: []wailsruntime.FileFilter{{DisplayName: "Druckbare HTML-Datei", Pattern: "*.html"}}})
+	if err != nil {
+		return ExportResult{}, err
+	}
+	if destination == "" {
+		return ExportResult{Cancelled: true}, nil
+	}
+	if !strings.EqualFold(filepath.Ext(destination), ".html") && !strings.EqualFold(filepath.Ext(destination), ".htm") {
+		destination += ".html"
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".vaultapp-export-*.tmp")
+	if err != nil {
+		return ExportResult{}, fmt.Errorf("Exportdatei vorbereiten: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	cleanup := func() { _ = temporary.Close(); _ = os.Remove(temporaryPath) }
+	maximum := int64(-1)
+	if !settings.ComparisonPrintUnlimited {
+		maximum = int64(settings.ComparisonPrintMaxMB) << 20
+	}
+	limited := &exportLimitWriter{writer: temporary, maximum: maximum, label: "Druckbericht-Export"}
+	header := comparisonPrintHeader{ExportedAt: time.Now().Format("02.01.2006 15:04:05"), Snapshot: snapshot, Counts: counts, Status: strings.ToLower(strings.TrimSpace(status)), Query: strings.TrimSpace(query)}
+	result := ExportResult{Path: destination}
+	result.Files, err = writeComparisonHTML(limited, header, func(handle func(database.ComparisonEntry) error) (int, error) {
+		return a.catalog.ExportComparison(ctx, snapshotID, status, query, handle)
+	})
+	if err == nil {
+		err = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(temporaryPath)
+		return ExportResult{}, fmt.Errorf("Druckbericht exportieren: %w", err)
 	}
 	if err := os.Chmod(temporaryPath, 0o644); err != nil {
 		cleanup()

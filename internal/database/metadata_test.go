@@ -355,6 +355,10 @@ func TestExportComparisonStreamsFilteredEntriesAndSnapshotMetadata(t *testing.T)
 	if err != nil || count != 1 || len(entries) != 1 || entries[0].Path != "one.txt" || entries[0].Status != "removed" {
 		t.Fatalf("comparison export = %#v, %d, %v", entries, count, err)
 	}
+	counts, err := catalog.ComparisonCounts(context.Background(), snapshots[0].ID, "", "")
+	if err != nil || counts.Total != 2 || counts.Added != 1 || counts.Removed != 1 || counts.Modified != 0 || counts.Unchanged != 0 {
+		t.Fatalf("comparison counts = %#v, %v", counts, err)
+	}
 }
 
 func TestAIAnalysisSurvivesOnlyUnchangedRescan(t *testing.T) {

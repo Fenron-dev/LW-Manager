@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dennis/vaultapp/internal/database"
@@ -84,6 +85,33 @@ func TestWriteComparisonJSONStreamsValidReport(t *testing.T) {
 	}
 	if document.Format != "vaultapp.archive-comparison" || document.Snapshot.DriveName != "Fotos" || document.Filters["status"] != "modified" || len(document.Entries) != 1 {
 		t.Fatalf("unexpected document: %+v", document)
+	}
+}
+
+func TestWriteComparisonHTMLEscapesContentAndHighlightsRows(t *testing.T) {
+	var destination bytes.Buffer
+	header := comparisonPrintHeader{
+		ExportedAt: "16.07.2026 12:00:00",
+		Snapshot:   database.ComparisonSnapshot{Snapshot: database.Snapshot{ID: 12, Note: "<Referenz>", Tags: []string{"A&B"}}, DriveName: "Fotos"},
+		Counts:     database.ComparisonCounts{Total: 1, Modified: 1}, Status: "modified", Query: "Sommer",
+	}
+	count, err := writeComparisonHTML(&destination, header, func(handle func(database.ComparisonEntry) error) (int, error) {
+		if err := handle(database.ComparisonEntry{Path: "Sommer/<foto>.jpg", Status: "modified", CurrentName: "<foto>.jpg", CurrentSize: 84, ArchiveName: "foto.jpg", ArchiveSize: 42}); err != nil {
+			return 0, err
+		}
+		return 1, nil
+	})
+	if err != nil || count != 1 {
+		t.Fatalf("writeComparisonHTML = %d, %v", count, err)
+	}
+	report := destination.String()
+	for _, expected := range []string{`<!doctype html>`, `class="modified"`, `Sommer/&lt;foto&gt;.jpg`, `&lt;Referenz&gt;`, `A&amp;B`, `@media print`} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("report misses %q: %s", expected, report)
+		}
+	}
+	if strings.Contains(report, "Sommer/<foto>.jpg") {
+		t.Fatal("HTML report contains unescaped path")
 	}
 }
 

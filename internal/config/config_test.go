@@ -51,6 +51,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.ComparisonExportEnabled || settings.ComparisonExportMaxMB != 100 || settings.ComparisonExportUnlimited {
 		t.Fatalf("unexpected comparison export defaults: %+v", settings)
 	}
+	if !settings.ComparisonPrintEnabled || settings.ComparisonPrintMaxMB != 100 || settings.ComparisonPrintUnlimited {
+		t.Fatalf("unexpected comparison print defaults: %+v", settings)
+	}
 	if !settings.DuplicateCheckEnabled || settings.DuplicateFileMB != 1024 || settings.DuplicateTotalMB != 2048 || settings.DuplicateFileUnlimited || settings.DuplicateTotalUnlimited {
 		t.Fatalf("unexpected duplicate check defaults: %+v", settings)
 	}
@@ -135,6 +138,15 @@ func TestCatalogExportLimitValidation(t *testing.T) {
 	settings.ComparisonExportMaxMB = 1_000_001
 	if err := settings.Validate(); err == nil {
 		t.Fatal("expected comparison export upper limit validation error")
+	}
+	settings = Defaults()
+	settings.ComparisonPrintMaxMB = 0
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected comparison print lower limit validation error")
+	}
+	settings.ComparisonPrintMaxMB = 1_000_001
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected comparison print upper limit validation error")
 	}
 }
 

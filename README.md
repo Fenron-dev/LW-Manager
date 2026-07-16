@@ -44,6 +44,8 @@ Die aktuell gefilterte Bibliotheksansicht lässt sich als UTF-8-CSV und ab Versi
 
 Ab Version 0.52.0-dev kann der aktuell gefilterte Archivvergleich ebenfalls als maschinenlesbarer JSON-Bericht exportiert werden. Der Bericht enthält Datenträger und Archivstand einschließlich Tags, Schutzstatus und Bemerkung, die verwendeten Status- und Pfadfilter sowie beide Seiten jedes Vergleichseintrags. Die Ausgabe wird fortlaufend geschrieben und besitzt unter **Einstellungen → Exporte und Berichte** eine eigene Aktivierung und ein eigenes Gesamtlimit mit Unbegrenzt-Schalter.
 
+Version 0.53.0-dev ergänzt eine eigenständige HTML-Druckansicht für denselben gefilterten Vergleich. Sie enthält eine Zusammenfassung nach Neu, Entfernt, Geändert und Unverändert sowie eine tabellarische Gegenüberstellung. Die farbigen Statusmarkierungen umfassen die vollständige Zeile und bleiben beim Drucken oder Speichern als PDF erhalten. Die Datei benötigt keine Netzwerkverbindung und öffnet sich in jedem aktuellen Browser. Aktivierung und Gesamtlimit werden unabhängig vom JSON-Bericht gesteuert.
+
 Im Tab **Datenträger** erkennt VaultApp angeschlossene externe Volumes automatisch. Bereits katalogisierte Medien werden über ihre Volume-ID beziehungsweise ihren Einbindungspfad zugeordnet und können direkt erneut gescannt werden. Die Erkennung lässt sich in den Einstellungen abschalten und belegt selbst keinen Cache- oder Katalogspeicher; der manuelle Ordnerdialog bleibt unabhängig davon verfügbar.
 
 Datenträger, einzelne Dateien und Archivstände können mehrere frei vergebene Tags erhalten; Datenträger und Archivstände zusätzlich eine Bemerkung. Tags werden zentral und ohne Beachtung der Groß-/Kleinschreibung verwaltet. Manuelle Datei-Tags werden in den Dateidetails bearbeitet und bleiben bei erneuten Scans desselben relativen Pfads erhalten. Fehlt der Pfad beim nächsten Scan, entfernt VaultApp seine Zuordnungen automatisch. Die Datenträgerliste lässt sich nach Tags filtern; der Bibliotheksfilter berücksichtigt sowohl direkt markierte Dateien als auch alle Dateien eines markierten Datenträgers. Im Archiv filtert er die auswählbaren Scan-Stände. Geschützte Archivstände werden weder über den Löschknopf noch durch das eingestellte automatische Aufbewahrungslimit entfernt; deshalb darf ihre Anzahl das Limit überschreiten.
@@ -103,10 +105,10 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
    - Portable Pakete für macOS ARM/Intel, Windows und Linux dauerhaft anhängen und mit SHA-256-Prüfsummen versehen – umgesetzt.
    - Entwicklungsbuilds und stabile Releases klar trennen; ein Release bleibt eine ausdrücklich gestartete Aktion – umgesetzt.
 
-6. **Erweiterte Exporte und Berichte – teilweise umgesetzt in 0.52.0-dev**
+6. **Erweiterte Exporte und Berichte – umgesetzt in 0.53.0-dev**
    - Gefilterten Katalog zusätzlich als JSON exportieren – umgesetzt.
-   - Archivvergleiche als maschinenlesbaren Bericht und druckbare Änderungsübersicht exportieren – JSON-Bericht umgesetzt, druckbare Übersicht noch offen.
-   - Exportarten einzeln aktivierbar machen und ihre maximale Gesamtgröße jeweils mit Unbegrenzt-Schalter steuern – für CSV, Katalog-JSON und Vergleichs-JSON umgesetzt, für die druckbare Übersicht noch offen.
+   - Archivvergleiche als maschinenlesbaren Bericht und druckbare Änderungsübersicht exportieren – umgesetzt.
+   - Exportarten einzeln aktivierbar machen und ihre maximale Gesamtgröße jeweils mit Unbegrenzt-Schalter steuern – umgesetzt.
 
 Für neue Funktionen gilt weiterhin: Aktivierung und Ressourcenlimits werden unter **Einstellungen** angeboten, wenn Dateien gelesen oder Daten dauerhaft im Vault gespeichert werden. Nicht verändernde Funktionen ohne eigenen Speicherverbrauch benötigen kein künstliches Speicherlimit.
 

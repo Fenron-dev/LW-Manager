@@ -128,6 +128,9 @@ async function showSettings() {
     $('#setting-comparison-export-enabled').checked = settings.comparisonExportEnabled;
     $('#setting-comparison-export-limit').value = settings.comparisonExportMaxMB;
     $('#setting-comparison-export-unlimited').checked = settings.comparisonExportUnlimited;
+    $('#setting-comparison-print-enabled').checked = settings.comparisonPrintEnabled;
+    $('#setting-comparison-print-limit').value = settings.comparisonPrintMaxMB;
+    $('#setting-comparison-print-unlimited').checked = settings.comparisonPrintUnlimited;
     $('#setting-duplicate-enabled').checked = settings.duplicateCheckEnabled;
     $('#setting-duplicate-file-limit').value = settings.duplicateFileMB;
     $('#setting-duplicate-file-unlimited').checked = settings.duplicateFileUnlimited;
@@ -444,6 +447,9 @@ async function saveSettings() {
       comparisonExportEnabled: $('#setting-comparison-export-enabled').checked,
       comparisonExportMaxMB: Number($('#setting-comparison-export-limit').value),
       comparisonExportUnlimited: $('#setting-comparison-export-unlimited').checked,
+      comparisonPrintEnabled: $('#setting-comparison-print-enabled').checked,
+      comparisonPrintMaxMB: Number($('#setting-comparison-print-limit').value),
+      comparisonPrintUnlimited: $('#setting-comparison-print-unlimited').checked,
       duplicateCheckEnabled: $('#setting-duplicate-enabled').checked,
       duplicateFileMB: Number($('#setting-duplicate-file-limit').value),
       duplicateFileUnlimited: $('#setting-duplicate-file-unlimited').checked,
@@ -642,6 +648,9 @@ function syncSettingsControls() {
   const comparisonExportEnabled = $('#setting-comparison-export-enabled').checked;
   $('#setting-comparison-export-unlimited').disabled = !comparisonExportEnabled;
   $('#setting-comparison-export-limit').disabled = !comparisonExportEnabled || $('#setting-comparison-export-unlimited').checked;
+  const comparisonPrintEnabled = $('#setting-comparison-print-enabled').checked;
+  $('#setting-comparison-print-unlimited').disabled = !comparisonPrintEnabled;
+  $('#setting-comparison-print-limit').disabled = !comparisonPrintEnabled || $('#setting-comparison-print-unlimited').checked;
   const duplicateEnabled = $('#setting-duplicate-enabled').checked;
   $('#setting-duplicate-file-unlimited').disabled = !duplicateEnabled;
   $('#setting-duplicate-file-limit').disabled = !duplicateEnabled || $('#setting-duplicate-file-unlimited').checked;
@@ -1128,6 +1137,23 @@ async function exportComparisonJSON() {
   try {
     const query = comparisonMode === 'list' ? $('#compare-query').value : '';
     const result = await window.go.main.App.ExportSnapshotComparisonJSON(snapshotID, $('#compare-status').value, query);
+    $('#comparison-export-status').textContent = result.cancelled ? '' : `${result.files.toLocaleString('de-DE')} Einträge · ${formatBytes(result.bytes)}`;
+  } catch (error) {
+    $('#comparison-export-status').textContent = `Export fehlgeschlagen: ${error}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function exportComparisonHTML() {
+  const snapshotID = Number($('#compare-snapshot').value);
+  const button = $('#export-comparison-html');
+  if (!snapshotID) { $('#comparison-export-status').textContent = 'Bitte zuerst einen Archivstand auswählen.'; return; }
+  button.disabled = true;
+  $('#comparison-export-status').textContent = 'Druckansicht wird erstellt …';
+  try {
+    const query = comparisonMode === 'list' ? $('#compare-query').value : '';
+    const result = await window.go.main.App.ExportSnapshotComparisonHTML(snapshotID, $('#compare-status').value, query);
     $('#comparison-export-status').textContent = result.cancelled ? '' : `${result.files.toLocaleString('de-DE')} Einträge · ${formatBytes(result.bytes)}`;
   } catch (error) {
     $('#comparison-export-status').textContent = `Export fehlgeschlagen: ${error}`;
@@ -1868,7 +1894,7 @@ $('#restore-backup-button').addEventListener('click', restoreBackup);
 $('#save-ai-credential-button').addEventListener('click', saveAICredential);
 $('#clear-ai-credential-button').addEventListener('click', clearAICredential);
 $('#test-ai-provider-button').addEventListener('click', testAIProvider);
-['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-catalog-json-export-enabled', '#setting-catalog-json-export-unlimited', '#setting-comparison-export-enabled', '#setting-comparison-export-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-quarantine-enabled', '#setting-quarantine-file-unlimited', '#setting-quarantine-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-scan-exclusions-enabled', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-text-stored-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
+['#setting-ai-enabled', '#setting-ai-provider', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled', '#setting-ai-vision-file-unlimited', '#setting-ai-vision-total-unlimited', '#setting-backup-enabled', '#setting-backup-file-unlimited', '#setting-backup-unlimited', '#setting-catalog-export-enabled', '#setting-catalog-export-unlimited', '#setting-catalog-json-export-enabled', '#setting-catalog-json-export-unlimited', '#setting-comparison-export-enabled', '#setting-comparison-export-unlimited', '#setting-comparison-print-enabled', '#setting-comparison-print-unlimited', '#setting-duplicate-enabled', '#setting-duplicate-file-unlimited', '#setting-duplicate-total-unlimited', '#setting-quarantine-enabled', '#setting-quarantine-file-unlimited', '#setting-quarantine-total-unlimited', '#setting-scan-diagnostics-enabled', '#setting-scan-diagnostic-file-unlimited', '#setting-scan-diagnostics-unlimited', '#setting-scan-exclusions-enabled', '#setting-image-analysis-enabled', '#setting-image-header-unlimited', '#setting-image-scan-unlimited', '#setting-exif-enabled', '#setting-exif-file-unlimited', '#setting-exif-total-unlimited', '#setting-text-enabled', '#setting-text-file-unlimited', '#setting-text-total-unlimited', '#setting-text-stored-unlimited', '#setting-image-preview-enabled', '#setting-image-preview-unlimited', '#setting-thumbnail-cache-unlimited', '#setting-pdf-enabled', '#setting-pdf-unlimited', '#setting-video-enabled', '#setting-video-unlimited'].forEach((selector) => {
   $(selector).addEventListener('change', syncSettingsControls);
 });
 $('#setting-ai-provider').addEventListener('change', () => {
@@ -1924,4 +1950,5 @@ $('#compare-next').addEventListener('click', () => loadComparison(comparisonPage
 $('#compare-list-mode').addEventListener('click',()=>setComparisonMode('list'));
 $('#compare-tree-mode').addEventListener('click',()=>setComparisonMode('tree'));
 $('#export-comparison-json').addEventListener('click', exportComparisonJSON);
+$('#export-comparison-html').addEventListener('click', exportComparisonHTML);
 loadInfo().then(loadDrives);
