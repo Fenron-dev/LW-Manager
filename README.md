@@ -2,6 +2,8 @@
 
 Portable Desktop-Anwendung zur Katalogisierung externer Datenträger. Der aktuelle Stand umfasst die Wails-Oberfläche, sichere Vault-Pfadlogik, einen rekursiven Metadaten-Scanner einschließlich Bildabmessungen, den portablen SQLite-Katalog, eine durchsuchbare Bibliothek und vollständig cloudbasierte Builds.
 
+Der abgeschlossene Funktionsstand wird als **VaultApp 1.0.0** für macOS ARM, macOS Intel, Windows x64 und Linux x64 veröffentlicht. Die stabilen Pakete werden ausschließlich durch GitHub Actions erzeugt und gemeinsam mit SHA-256-Prüfsummen im GitHub Release bereitgestellt.
+
 Bei einem erneuten Scan ersetzt VaultApp den aktiven Katalog vollständig durch den aktuellen Inhalt der Quelle. Der vorherige Stand wird als Archivstand gespeichert und erscheint nicht in der normalen Bibliothek. Wichtige Stände lassen sich gegen manuelles Löschen und die automatische Archivbereinigung schützen.
 
 Der Tab **Archiv** vergleicht den aktuellen Inhalt mit einem wählbaren früheren Stand und markiert neue, entfernte, geänderte und unveränderte Pfade farblich. In der Bibliothek kann eine optionale Duplikatprüfung gestartet werden. Sie bildet zunächst Größenkandidaten und liest nur diese Dateien für einen SHA-256-Inhaltsvergleich.
@@ -100,7 +102,7 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
    - Ausschlussmuster, Inhaltsindex und Bild-/EXIF-Analyse in wiederverwendbaren Profilen bündeln – umgesetzt.
    - Vor jedem Scan das tatsächlich verwendete Profil anzeigen und in der Diagnose festhalten – umgesetzt.
 
-5. **Versionierte GitHub-Releases – umgesetzt in 0.50.0-dev**
+5. **Versionierte GitHub-Releases – umgesetzt, erste stabile Veröffentlichung 1.0.0**
    - Freigegebene Versionen automatisch als GitHub-Release veröffentlichen – umgesetzt.
    - Portable Pakete für macOS ARM/Intel, Windows und Linux dauerhaft anhängen und mit SHA-256-Prüfsummen versehen – umgesetzt.
    - Entwicklungsbuilds und stabile Releases klar trennen; ein Release bleibt eine ausdrücklich gestartete Aktion – umgesetzt.
