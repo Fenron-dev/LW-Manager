@@ -20,7 +20,9 @@ Das dauerhafte Löschen aus der Quarantäne ist ab Version 0.44.0-dev verfügbar
 2. Unter **Actions → Build portable apps → Run workflow** einen Build starten.
 3. Die vier Pakete nach Abschluss unter **Artifacts** herunterladen.
 
-Ein Tag wie `v0.1.0` baut dieselben Pakete und veröffentlicht sie zusätzlich als GitHub Release. Go, Wails, GTK und weitere Build-Abhängigkeiten werden ausschließlich auf GitHub-Runnern installiert.
+Diese Entwicklungsbuilds tragen die im Quellcode hinterlegte `-dev`-Version, liegen nur als zeitlich begrenzte Workflow-Artefakte vor und erzeugen kein GitHub Release. Go, Wails, GTK und weitere Build-Abhängigkeiten werden ausschließlich auf GitHub-Runnern installiert.
+
+Ein stabiles Release wird ab Version 0.50.0-dev ausschließlich bewusst unter **Actions → Publish stable release → Run workflow** gestartet. Dort müssen die stabile SemVer-Version ohne `v` und zusätzlich exakt `RELEASE` eingegeben werden. Der Workflow akzeptiert nur die zur aktuellen Entwicklungsversion passende Nummer, prüft Tests und Formatierung und legt anschließend den annotierten Tag an. Dieser startet die plattformübergreifenden Builds und veröffentlicht dauerhaft macOS-ARM-, macOS-Intel- und Linux-Pakete als `tar.gz`, Windows als `zip` sowie eine gemeinsame `SHA256SUMS.txt`. Die stabile Versionsnummer wird beim Build in alle Programme eingebettet. Bereits vorhandene Tags werden abgewiesen.
 
 ## Portable Struktur
 
@@ -94,10 +96,10 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
    - Ausschlussmuster, Inhaltsindex und Bild-/EXIF-Analyse in wiederverwendbaren Profilen bündeln – umgesetzt.
    - Vor jedem Scan das tatsächlich verwendete Profil anzeigen und in der Diagnose festhalten – umgesetzt.
 
-5. **Versionierte GitHub-Releases**
-   - Freigegebene Versionen automatisch als GitHub-Release veröffentlichen.
-   - Portable Pakete für macOS ARM/Intel, Windows und Linux dauerhaft anhängen und mit SHA-256-Prüfsummen versehen.
-   - Entwicklungsbuilds und stabile Releases klar trennen; ein Release bleibt eine ausdrücklich gestartete Aktion.
+5. **Versionierte GitHub-Releases – umgesetzt in 0.50.0-dev**
+   - Freigegebene Versionen automatisch als GitHub-Release veröffentlichen – umgesetzt.
+   - Portable Pakete für macOS ARM/Intel, Windows und Linux dauerhaft anhängen und mit SHA-256-Prüfsummen versehen – umgesetzt.
+   - Entwicklungsbuilds und stabile Releases klar trennen; ein Release bleibt eine ausdrücklich gestartete Aktion – umgesetzt.
 
 6. **Erweiterte Exporte und Berichte**
    - Gefilterten Katalog zusätzlich als JSON exportieren.

@@ -38,9 +38,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
       - name: Install pinned Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      - name: Determine application version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "APP_VERSION=$(sed -n 's/^var appVersion = "\([^"]*\)"$/\1/p' app.go)" >> "$GITHUB_ENV"
+          fi
       - name: Build
         shell: bash
-        run: wails build ${{ matrix.args }} -clean
+        run: wails build ${{ matrix.args }} -clean -ldflags "-X main.appVersion=${APP_VERSION}"
       - name: Stage portable layout
         shell: bash
         run: |
@@ -68,8 +76,21 @@ jobs:
         with:
           path: artifacts
       - name: Create archives
-        run: for dir in artifacts/*; do tar -czf "$(basename "$dir").tar.gz" -C "$dir" .; done
+        shell: bash
+        run: |
+          mkdir release
+          for dir in artifacts/*; do
+            name="$(basename "$dir")"
+            if [[ "$name" == *windows* ]]; then
+              (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/release/$name.zip" .)
+            else
+              tar -czf "release/$name.tar.gz" -C "$dir" .
+            fi
+          done
+          (cd release && sha256sum VaultApp-* > SHA256SUMS.txt)
       - uses: softprops/action-gh-release@v2
         with:
-          files: '*.tar.gz'
+          name: VaultApp ${{ github.ref_name }}
+          files: release/*
           generate_release_notes: true
+          fail_on_unmatched_files: true
