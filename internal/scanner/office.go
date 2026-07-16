@@ -26,6 +26,9 @@ func extractOfficeText(data []byte, extension string, maximum int64) string {
 	if extension == ".xlsx" {
 		return extractXLSXText(archive, maximum)
 	}
+	if extension == ".pptx" {
+		return extractPPTXText(archive, maximum)
+	}
 	entries := make([]*zip.File, 0)
 	for _, file := range archive.File {
 		if !officeTextEntry(extension, file.Name) || file.FileInfo().IsDir() || file.UncompressedSize64 > maximumOfficeXMLBytes {
@@ -72,10 +75,100 @@ func officeTextEntry(extension, name string) bool {
 		return name == "word/document.xml" || name == "word/footnotes.xml" || name == "word/endnotes.xml" ||
 			strings.HasPrefix(name, "word/header") && strings.HasSuffix(name, ".xml") ||
 			strings.HasPrefix(name, "word/footer") && strings.HasSuffix(name, ".xml")
-	case ".odt", ".ods":
+	case ".odt", ".ods", ".odp":
 		return name == "content.xml"
 	default:
 		return false
+	}
+}
+
+func extractPPTXText(archive *zip.Reader, maximum int64) string {
+	entries := make([]*zip.File, 0)
+	for _, file := range archive.File {
+		if file.FileInfo().IsDir() || file.UncompressedSize64 > maximumOfficeXMLBytes {
+			continue
+		}
+		name := path.Clean(strings.ReplaceAll(file.Name, "\\", "/"))
+		if _, slide := numberedOfficePart(name, "ppt/slides/slide"); slide {
+			entries = append(entries, file)
+			continue
+		}
+		if _, note := numberedOfficePart(name, "ppt/notesSlides/notesSlide"); note {
+			entries = append(entries, file)
+		}
+	}
+	sort.SliceStable(entries, func(left, right int) bool {
+		leftKind, leftNumber := presentationEntryOrder(entries[left].Name)
+		rightKind, rightNumber := presentationEntryOrder(entries[right].Name)
+		if leftKind != rightKind {
+			return leftKind < rightKind
+		}
+		if leftNumber != rightNumber {
+			return leftNumber < rightNumber
+		}
+		return entries[left].Name < entries[right].Name
+	})
+	var output strings.Builder
+	for _, entry := range entries {
+		reader, err := entry.Open()
+		if err != nil {
+			continue
+		}
+		appendPresentationXMLText(&output, io.LimitReader(reader, maximumOfficeXMLBytes+1), maximum)
+		_ = reader.Close()
+		if int64(output.Len()) >= maximum {
+			break
+		}
+	}
+	return truncateUTF8(strings.Join(strings.Fields(output.String()), " "), maximum)
+}
+
+func presentationEntryOrder(name string) (kind, number int) {
+	name = path.Clean(strings.ReplaceAll(name, "\\", "/"))
+	if number, ok := numberedOfficePart(name, "ppt/slides/slide"); ok {
+		return 0, number
+	}
+	number, _ = numberedOfficePart(name, "ppt/notesSlides/notesSlide")
+	return 1, number
+}
+
+func numberedOfficePart(name, prefix string) (int, bool) {
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".xml") {
+		return 0, false
+	}
+	number := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".xml")
+	if number == "" || strings.IndexFunc(number, func(value rune) bool { return value < '0' || value > '9' }) >= 0 {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(number)
+	return parsed, err == nil
+}
+
+func appendPresentationXMLText(output *strings.Builder, reader io.Reader, maximum int64) {
+	decoder := xml.NewDecoder(reader)
+	var current strings.Builder
+	inText := false
+	for int64(output.Len()) < maximum {
+		token, err := decoder.Token()
+		if err != nil {
+			return
+		}
+		switch value := token.(type) {
+		case xml.StartElement:
+			if value.Name.Local == "t" {
+				inText = true
+				current.Reset()
+			}
+		case xml.CharData:
+			if inText {
+				current.Write(value)
+			}
+		case xml.EndElement:
+			if value.Name.Local == "t" {
+				appendIndexedText(output, current.String(), maximum)
+				inText = false
+			}
+		}
 	}
 }
 

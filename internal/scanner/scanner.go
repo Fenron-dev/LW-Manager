@@ -236,7 +236,7 @@ func textPreview(path, extension string, options TextIndexOptions, totalRead, to
 		*totalStored += int64(len(text))
 		return text
 	}
-	if extension == ".docx" || extension == ".odt" || extension == ".xlsx" || extension == ".ods" {
+	if extension == ".docx" || extension == ".odt" || extension == ".xlsx" || extension == ".ods" || extension == ".pptx" || extension == ".odp" {
 		text := extractOfficeText(data, extension, storedLimit)
 		*totalStored += int64(len(text))
 		return text
@@ -280,7 +280,7 @@ func textExtensionEnabled(extension string, options TextIndexOptions) bool {
 	switch extension {
 	case ".pdf":
 		return options.PDF
-	case ".docx", ".odt", ".xlsx", ".ods":
+	case ".docx", ".odt", ".xlsx", ".ods", ".pptx", ".odp":
 		return options.Office
 	case ".txt", ".md", ".markdown", ".log", ".csv", ".tsv", ".rtf":
 		return options.Documents

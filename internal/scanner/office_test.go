@@ -42,6 +42,24 @@ func TestExtractOfficeTextFromXLSXAndODS(t *testing.T) {
 	}
 }
 
+func TestExtractOfficeTextFromPPTXAndODP(t *testing.T) {
+	pptx := officeTestArchive(t, map[string]string{
+		"ppt/slides/slide2.xml":           `<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><a:t>Zweite Folie</a:t></p:sld>`,
+		"ppt/slides/slide1.xml":           `<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><a:t>Titel &amp; Start</a:t><a:t>Erste Folie</a:t></p:sld>`,
+		"ppt/notesSlides/notesSlide1.xml": `<p:notes xmlns:p="urn:p" xmlns:a="urn:a"><a:t>Sprechernotiz</a:t></p:notes>`,
+		"ppt/media/image1.xml":            `<a:t xmlns:a="urn:a">Nicht indexieren</a:t>`,
+	})
+	if text := extractOfficeText(pptx, ".pptx", 1024); text != "Titel & Start Erste Folie Zweite Folie Sprechernotiz" {
+		t.Fatalf("PPTX text = %q", text)
+	}
+	odp := officeTestArchive(t, map[string]string{
+		"content.xml": `<office:document xmlns:office="urn:o" xmlns:text="urn:t"><office:body><office:presentation><text:p>ODP-Titel</text:p><text:p>Lokale Folie</text:p></office:presentation></office:body></office:document>`,
+	})
+	if text := extractOfficeText(odp, ".odp", 1024); text != "ODP-Titel Lokale Folie" {
+		t.Fatalf("ODP text = %q", text)
+	}
+}
+
 func TestOfficeTextRejectsInvalidArchiveAndHonorsLimit(t *testing.T) {
 	if text := extractOfficeText([]byte("not a zip"), ".docx", 100); text != "" {
 		t.Fatalf("invalid archive text = %q", text)
@@ -68,8 +86,10 @@ func TestOfficeTextPreviewUsesOfficeToggleAndBudgets(t *testing.T) {
 	if text := textPreview(file, ".docx", options, &read, &stored); text != "" || read != 0 || stored != 0 {
 		t.Fatalf("disabled Office preview = %q, read %d, stored %d", text, read, stored)
 	}
-	if !textExtensionEnabled(".xlsx", TextIndexOptions{Office: true}) || !textExtensionEnabled(".ods", TextIndexOptions{Office: true}) {
-		t.Fatal("spreadsheet extensions are not routed through the Office group")
+	for _, extension := range []string{".xlsx", ".ods", ".pptx", ".odp"} {
+		if !textExtensionEnabled(extension, TextIndexOptions{Office: true}) {
+			t.Fatalf("%s is not routed through the Office group", extension)
+		}
 	}
 }
 
