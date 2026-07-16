@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS drives (
     detected_type TEXT,
     storage_location TEXT,
     note TEXT,
+	scan_profile_id TEXT NOT NULL DEFAULT '',
     used_size INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

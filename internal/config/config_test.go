@@ -77,6 +77,31 @@ func TestScanExclusionValidation(t *testing.T) {
 	}
 }
 
+func TestScanProfileValidationAndPersistence(t *testing.T) {
+	settings := Defaults()
+	settings.ScanProfiles = []ScanProfile{{
+		ID: "profile-media", Name: "Medien", ExclusionsEnabled: true,
+		ExcludeSystem: true, ExcludedPatterns: []string{"cache-*"}, ImageAnalysisEnabled: true,
+	}}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Save(path, settings); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil || len(loaded.ScanProfiles) != 1 || loaded.ScanProfiles[0].Name != "Medien" {
+		t.Fatalf("scan profiles = %#v, %v", loaded.ScanProfiles, err)
+	}
+	settings.ScanProfiles = append(settings.ScanProfiles, settings.ScanProfiles[0])
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected duplicate profile id validation error")
+	}
+	settings = Defaults()
+	settings.ScanProfiles = []ScanProfile{{ID: "invalid id", Name: "Ungültig"}}
+	if err := settings.Validate(); err == nil {
+		t.Fatal("expected invalid profile id validation error")
+	}
+}
+
 func TestCatalogExportLimitValidation(t *testing.T) {
 	settings := Defaults()
 	settings.CatalogExportMaxMB = 0

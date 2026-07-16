@@ -22,18 +22,19 @@ var schema string
 
 type Catalog struct{ db, readDB *sql.DB }
 type DriveScan struct {
-	Path, Label  string
-	Files        []scanner.File
-	TotalSize    int64
-	UsedSize     int64
-	UUID         string
-	FSType       string
-	Vendor       string
-	Model        string
-	Serial       string
-	DeviceType   string
-	Archive      bool
-	MaxSnapshots int
+	Path, Label   string
+	Files         []scanner.File
+	TotalSize     int64
+	UsedSize      int64
+	UUID          string
+	FSType        string
+	Vendor        string
+	Model         string
+	Serial        string
+	DeviceType    string
+	ScanProfileID string
+	Archive       bool
+	MaxSnapshots  int
 }
 
 type Drive struct {
@@ -46,6 +47,7 @@ type Drive struct {
 	DeviceType      string   `json:"deviceType"`
 	StorageLocation string   `json:"storageLocation"`
 	Note            string   `json:"note"`
+	ScanProfileID   string   `json:"scanProfileId"`
 	Tags            []string `json:"tags"`
 	UUID            string   `json:"uuid"`
 	Serial          string   `json:"serial"`
@@ -686,7 +688,7 @@ func (c *Catalog) DeleteQuarantineRecord(id int64) error {
 
 func (c *Catalog) Drives() ([]Drive, error) {
 	rows, err := c.db.Query(`SELECT d.id,d.label,COALESCE(d.display_name,''),COALESCE(d.inventory_number,''),COALESCE(d.vault_path,''),
-		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.note,''),
+		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.note,''),COALESCE(d.scan_profile_id,''),
 		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN drive_tags dt ON dt.tag_id=t.id WHERE dt.drive_id=d.id ORDER BY t.name COLLATE NOCASE)),''),
 		d.uuid,COALESCE(d.serial,''),COALESCE(d.vendor,''),COALESCE(d.detected_type,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
 		FROM drives d LEFT JOIN files f ON f.drive_id=d.id GROUP BY d.id ORDER BY COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE`)
@@ -698,7 +700,7 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	for rows.Next() {
 		var drive Drive
 		var tags string
-		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.Note, &tags, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
+		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.Note, &drive.ScanProfileID, &tags, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
 			return nil, err
 		}
 		drive.Tags = splitStoredTags(tags)
@@ -707,14 +709,14 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	return drives, rows.Err()
 }
 
-func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note string, tags []string) error {
+func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note, scanProfileID string, tags []string) error {
 	tx, err := c.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.Exec(`UPDATE drives SET display_name=?,inventory_number=?,manufacturer=?,device_type=?,storage_location=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		strings.TrimSpace(displayName), strings.TrimSpace(inventoryNumber), strings.TrimSpace(manufacturer), strings.TrimSpace(deviceType), strings.TrimSpace(storageLocation), strings.TrimSpace(note), id)
+	result, err := tx.Exec(`UPDATE drives SET display_name=?,inventory_number=?,manufacturer=?,device_type=?,storage_location=?,note=?,scan_profile_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		strings.TrimSpace(displayName), strings.TrimSpace(inventoryNumber), strings.TrimSpace(manufacturer), strings.TrimSpace(deviceType), strings.TrimSpace(storageLocation), strings.TrimSpace(note), strings.TrimSpace(scanProfileID), id)
 	if err != nil {
 		return err
 	}
@@ -729,6 +731,33 @@ func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufactur
 		return err
 	}
 	return tx.Commit()
+}
+
+func (c *Catalog) ScanProfileID(uuid, path string) (string, error) {
+	identity := ""
+	if strings.TrimSpace(uuid) != "" {
+		identity = "volume:" + strings.TrimPrefix(strings.ToLower(strings.TrimSpace(uuid)), "volume:")
+	}
+	if identity != "" {
+		var profile string
+		err := c.readDB.QueryRow(`SELECT COALESCE(scan_profile_id,'') FROM drives WHERE uuid=?`, identity).Scan(&profile)
+		if err == nil {
+			return profile, nil
+		}
+		if err != sql.ErrNoRows {
+			return "", err
+		}
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	var profile string
+	err = c.readDB.QueryRow(`SELECT COALESCE(scan_profile_id,'') FROM drives WHERE vault_path=?`, absolute).Scan(&profile)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return profile, err
 }
 
 func (c *Catalog) StorageLocations() ([]string, error) {
@@ -1146,7 +1175,7 @@ func (c *Catalog) migrate() error {
 		"display_name": "TEXT", "inventory_number": "TEXT", "manufacturer": "TEXT", "device_type": "TEXT",
 		"storage_location": "TEXT", "total_size": "INTEGER NOT NULL DEFAULT 0", "used_size": "INTEGER NOT NULL DEFAULT 0",
 		"serial": "TEXT", "vendor": "TEXT", "model": "TEXT", "fs_type": "TEXT",
-		"detected_type": "TEXT", "note": "TEXT",
+		"detected_type": "TEXT", "note": "TEXT", "scan_profile_id": "TEXT NOT NULL DEFAULT ''",
 	}
 	rows, err := c.db.Query("PRAGMA table_info(drives)")
 	if err != nil {

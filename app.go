@@ -58,6 +58,7 @@ type AppInfo struct {
 type ScanResult struct {
 	Cancelled       bool            `json:"cancelled"`
 	Drive           string          `json:"drive"`
+	Profile         string          `json:"profile"`
 	Files           int             `json:"files"`
 	Bytes           int64           `json:"bytes"`
 	Skipped         int             `json:"skipped"`
@@ -73,6 +74,7 @@ type ScanDiagnostic struct {
 	FinishedAt      time.Time       `json:"finishedAt"`
 	DurationMS      int64           `json:"durationMs"`
 	Drive           string          `json:"drive"`
+	Profile         string          `json:"profile"`
 	Files           int             `json:"files"`
 	Bytes           int64           `json:"bytes"`
 	Skipped         int             `json:"skipped"`
@@ -214,7 +216,7 @@ func (a *App) Shutdown(context.Context) {
 }
 
 func (a *App) GetAppInfo() AppInfo {
-	info := AppInfo{Version: "0.48.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
+	info := AppInfo{Version: "0.49.0-dev", Platform: goruntime.GOOS, VaultRoot: a.root}
 	if a.initErr != nil {
 		info.Message = fmt.Sprintf("Vault kann nicht vorbereitet werden: %v", a.initErr)
 		return info
@@ -933,11 +935,23 @@ func hashFile(path string) (string, int64, error) {
 	return hex.EncodeToString(hash.Sum(nil)), bytesRead, nil
 }
 
-func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note string, tags []string) error {
+func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note, scanProfileID string, tags []string) error {
 	if a.initErr != nil || a.catalog == nil {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
-	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note, tags)
+	if scanProfileID != "" {
+		found := false
+		for _, profile := range a.currentSettings().ScanProfiles {
+			if profile.ID == scanProfileID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("das gewählte Scanprofil ist nicht mehr vorhanden")
+		}
+	}
+	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note, scanProfileID, tags)
 }
 
 func (a *App) GetStorageLocations() ([]string, error) {
@@ -1826,9 +1840,14 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 	a.scanMu.Lock()
 	defer a.scanMu.Unlock()
 	started := time.Now()
-	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": 0, "path": selected})
 	settings := a.currentSettings()
 	identity, _ := storage.Identify(selected)
+	profileID, profileErr := a.catalog.ScanProfileID(identity.UUID, selected)
+	if profileErr != nil {
+		return ScanResult{}, fmt.Errorf("Scanprofil bestimmen: %w", profileErr)
+	}
+	settings, profileName := effectiveScanSettings(settings, profileID)
+	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "prepare", "files": 0, "path": selected, "profile": profileName})
 	storedTextBytes := int64(settings.TextStoredMB) << 20
 	if settings.TextIndexEnabled && !settings.TextStoredUnlimited {
 		used, usageErr := a.catalog.StoredTextBytesExcludingDrive(identity.UUID, selected)
@@ -1855,11 +1874,11 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 		Enabled: settings.ScanExclusionsEnabled, System: settings.ScanExcludeSystem, Development: settings.ScanExcludeDevelopment, Patterns: settings.ScanExcludedPatterns,
 	}, func(count int, path string) {
 		if count == 1 || count%250 == 0 {
-			wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": count, "path": path})
+			wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "scan", "files": count, "path": path, "profile": profileName})
 		}
 	})
 	if err != nil {
-		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
+		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
 	}
 	totalSize, usedSize, _ := storage.Usage(selected)
@@ -1867,14 +1886,36 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 	if identity.Label != "" {
 		label = identity.Label
 	}
-	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected})
+	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected, "profile": profileName})
 	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Vendor: identity.Vendor, Model: identity.Model, Serial: identity.Serial, DeviceType: identity.DeviceType, Archive: settings.ArchiveEnabled, MaxSnapshots: settings.MaxSnapshots}); err != nil {
-		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
+		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
 	}
-	diagnostic := ScanDiagnostic{StartedAt: started, Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated}
-	result := ScanResult{Drive: selected, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}
+	diagnostic := ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated}
+	result := ScanResult{Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}
 	result.LogPath = a.writeScanDiagnostic(diagnostic)
 	wailsruntime.EventsEmit(a.ctx, "scan:complete", result)
 	return result, nil
+}
+
+func effectiveScanSettings(settings appconfig.Settings, profileID string) (appconfig.Settings, string) {
+	for _, profile := range settings.ScanProfiles {
+		if profile.ID != profileID {
+			continue
+		}
+		settings.ScanExclusionsEnabled = profile.ExclusionsEnabled
+		settings.ScanExcludeSystem = profile.ExcludeSystem
+		settings.ScanExcludeDevelopment = profile.ExcludeDevelopment
+		settings.ScanExcludedPatterns = append([]string(nil), profile.ExcludedPatterns...)
+		settings.ImageAnalysisEnabled = profile.ImageAnalysisEnabled
+		settings.EXIFEnabled = profile.EXIFEnabled
+		settings.TextIndexEnabled = profile.TextIndexEnabled
+		settings.TextDocumentsEnabled = profile.TextDocumentsEnabled
+		settings.TextPDFEnabled = profile.TextPDFEnabled
+		settings.TextOfficeEnabled = profile.TextOfficeEnabled
+		settings.TextDataEnabled = profile.TextDataEnabled
+		settings.TextSourceEnabled = profile.TextSourceEnabled
+		return settings, profile.Name
+	}
+	return settings, "Globale Einstellungen"
 }

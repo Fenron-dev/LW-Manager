@@ -36,6 +36,8 @@ Der optionale Volltextindex erfasst freigegebene UTF-8-Dokumente, strukturierte 
 
 Für den Volltextindex gelten drei unabhängige Grenzen: Rohdaten pro Datei, gelesene Rohdaten pro Scan und dauerhaft gespeicherter Indextext im gesamten Katalog. Alle Grenzen besitzen einen Unbegrenzt-Schalter. Beim erneuten Scan wird der bisherige Index des betroffenen Datenträgers aus der Speicherberechnung herausgenommen und anschließend durch dessen aktuellen Stand ersetzt. In der Bibliothek entscheidet der Schalter **Auch indexierte Dateiinhalte durchsuchen**, ob eine Suche zusätzlich den gespeicherten Inhalt berücksichtigt.
 
+Ab Version 0.49.0-dev lassen sich unter **Einstellungen → Scanprofile** wiederverwendbare Kombinationen aus Ausschlussregeln, Bild-/EXIF-Analyse und Volltextindex anlegen. Im Bearbeiten-Dialog eines Datenträgers wird das Profil zugeordnet und beim nächsten Scan automatisch angewendet. Das tatsächlich verwendete Profil erscheint vor und während des Scans sowie im Diagnosebericht. Sämtliche Datei- und Gesamtbudgets bleiben globale Obergrenzen einschließlich ihrer Unbegrenzt-Schalter; ein Profil kann diese Grenzen daher nicht unbemerkt erhöhen. Wird ein zugeordnetes Profil später gelöscht, fällt der Datenträger sicher auf die globalen Einstellungen zurück.
+
 Die aktuell gefilterte Bibliotheksansicht lässt sich als UTF-8-CSV exportieren. Enthalten sind Dateiname, Datenträger, relativer Pfad, Typ, Größe, Änderungsdatum, manuelle Tags und vorhandene KI-Metadaten; Originaldateien werden nicht kopiert. Der Export wird zeilenweise geschrieben, schützt Tabellenprogramme vor Formelausführung durch präparierte Textfelder und landet nur am ausdrücklich gewählten Ziel. Unter **Einstellungen → Katalogexport** lässt sich die Funktion deaktivieren und die maximale CSV-Gesamtgröße begrenzen oder auf unbegrenzt setzen.
 
 Im Tab **Datenträger** erkennt VaultApp angeschlossene externe Volumes automatisch. Bereits katalogisierte Medien werden über ihre Volume-ID beziehungsweise ihren Einbindungspfad zugeordnet und können direkt erneut gescannt werden. Die Erkennung lässt sich in den Einstellungen abschalten und belegt selbst keinen Cache- oder Katalogspeicher; der manuelle Ordnerdialog bleibt unabhängig davon verfügbar.
@@ -87,10 +89,10 @@ Die im Ausgangskonzept vorgesehenen Kernfunktionen sind umgesetzt. Weitere Erwei
    - Lesegrenzen pro Datei und pro Scan sowie ein Gesamtlimit für dauerhaft gespeicherten Indextext jeweils mit Unbegrenzt-Schalter anbieten – umgesetzt.
    - Extraktion lokal ausführen; externe KI-Dienste nur nach ausdrücklicher Freigabe verwenden – für alle unterstützten Formate umgesetzt.
 
-4. **Scan-Profile pro Datenträger**
-   - Globale Scan-Einstellungen optional je Datenträger überschreiben.
-   - Ausschlussmuster, Inhaltsindex, Bild-/EXIF-Analyse und weitere Scanoptionen in wiederverwendbaren Profilen bündeln.
-   - Vor jedem Scan das tatsächlich verwendete Profil anzeigen und in der Diagnose festhalten.
+4. **Scan-Profile pro Datenträger – umgesetzt in 0.49.0-dev**
+   - Globale Scan-Einstellungen optional je Datenträger überschreiben – umgesetzt.
+   - Ausschlussmuster, Inhaltsindex und Bild-/EXIF-Analyse in wiederverwendbaren Profilen bündeln – umgesetzt.
+   - Vor jedem Scan das tatsächlich verwendete Profil anzeigen und in der Diagnose festhalten – umgesetzt.
 
 5. **Versionierte GitHub-Releases**
    - Freigegebene Versionen automatisch als GitHub-Release veröffentlichen.

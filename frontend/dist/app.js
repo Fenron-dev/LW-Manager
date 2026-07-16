@@ -16,6 +16,7 @@ const duplicatePageSize = 25;
 const duplicateSelections = new Map();
 let inspectedBackup = null;
 let currentScanDiagnostic = null;
+let scanProfiles = [];
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -142,7 +143,9 @@ async function showSettings() {
 	$('#setting-scan-exclusions-enabled').checked = settings.scanExclusionsEnabled;
 	$('#setting-scan-exclude-system').checked = settings.scanExcludeSystem;
 	$('#setting-scan-exclude-development').checked = settings.scanExcludeDevelopment;
-	$('#setting-scan-excluded-patterns').value = (settings.scanExcludedPatterns || []).join('\n');
+    $('#setting-scan-excluded-patterns').value = (settings.scanExcludedPatterns || []).join('\n');
+	scanProfiles = (settings.scanProfiles || []).map((profile) => ({...profile, excludedPatterns: [...(profile.excludedPatterns || [])]}));
+	renderScanProfiles();
     $('#setting-image-analysis-enabled').checked = settings.imageAnalysisEnabled;
     $('#setting-image-jpeg').checked = settings.imageJPEGEnabled;
     $('#setting-image-png').checked = settings.imagePNGEnabled;
@@ -198,7 +201,7 @@ function renderScanDiagnostic(diagnostic) {
   title.textContent = diagnostic.error ? 'Scan fehlgeschlagen' : `${Number(diagnostic.files || 0).toLocaleString('de-DE')} Dateien katalogisiert`;
   const meta = document.createElement('span');
   const duration = diagnostic.durationMs ? ` · ${(diagnostic.durationMs / 1000).toFixed(1)} s` : '';
-  meta.textContent = `${formatBytes(diagnostic.bytes || 0)} · ${Number(diagnostic.skipped || 0).toLocaleString('de-DE')} fehlerhaft übersprungen · ${Number(diagnostic.excluded || 0).toLocaleString('de-DE')} durch Regeln ausgeschlossen${duration}`;
+  meta.textContent = `${diagnostic.profile ? `Profil: ${diagnostic.profile} · ` : ''}${formatBytes(diagnostic.bytes || 0)} · ${Number(diagnostic.skipped || 0).toLocaleString('de-DE')} fehlerhaft übersprungen · ${Number(diagnostic.excluded || 0).toLocaleString('de-DE')} durch Regeln ausgeschlossen${duration}`;
   const path = document.createElement('code');
   path.textContent = diagnostic.drive || '–';
   summary.append(title, meta, path);
@@ -314,6 +317,89 @@ async function loadTagManagement() {
   });
 }
 
+function ensureScanProfileDialog() {
+  let dialog = $('#scan-profile-dialog');
+  if (dialog) return dialog;
+  dialog = document.createElement('dialog');
+  dialog.id = 'scan-profile-dialog';
+  dialog.className = 'modal';
+  dialog.innerHTML = `<form method="dialog"><div class="modal-head"><div><p class="eyebrow">SCANPROFIL</p><h2 id="scan-profile-dialog-title">Profil</h2></div><button class="modal-close" value="cancel" aria-label="Schließen">×</button></div><input id="scan-profile-id" type="hidden"><div class="profile-fields"><label>Name<input id="scan-profile-name" maxlength="100" required></label><label class="setting-toggle"><input id="scan-profile-exclusions" type="checkbox">Ausschlussregeln anwenden</label><div class="format-toggles"><label><input id="scan-profile-system" type="checkbox">Systemreste</label><label><input id="scan-profile-development" type="checkbox">Entwicklungsordner</label></div><label>Eigene Ausschlussmuster<textarea id="scan-profile-patterns" rows="5" placeholder="cache-*&#10;private/*.tmp"></textarea></label><div class="format-toggles"><label><input id="scan-profile-images" type="checkbox">Bildabmessungen</label><label><input id="scan-profile-exif" type="checkbox">EXIF</label><label><input id="scan-profile-text" type="checkbox">Volltext</label></div><div class="format-toggles"><label><input id="scan-profile-documents" type="checkbox">Textdokumente</label><label><input id="scan-profile-pdf" type="checkbox">PDF</label><label><input id="scan-profile-office" type="checkbox">Office</label><label><input id="scan-profile-data" type="checkbox">Daten</label><label><input id="scan-profile-source" type="checkbox">Quellcode</label></div><small>Formate und sämtliche MB-/Unbegrenzt-Grenzen werden aus den globalen Einstellungen übernommen.</small></div><div class="modal-actions"><span id="scan-profile-dialog-status"></span><button value="cancel" class="secondary">Abbrechen</button><button id="save-scan-profile-button" type="button">Profil übernehmen</button></div></form>`;
+  document.body.append(dialog);
+  $('#save-scan-profile-button').addEventListener('click', saveScanProfile);
+  return dialog;
+}
+
+function openScanProfile(profile = null) {
+  const dialog = ensureScanProfileDialog();
+  const source = profile || {
+    id: '', name: '', exclusionsEnabled: $('#setting-scan-exclusions-enabled').checked,
+    excludeSystem: $('#setting-scan-exclude-system').checked, excludeDevelopment: $('#setting-scan-exclude-development').checked,
+    excludedPatterns: $('#setting-scan-excluded-patterns').value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+    imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked, exifEnabled: $('#setting-exif-enabled').checked,
+    textIndexEnabled: $('#setting-text-enabled').checked, textDocumentsEnabled: $('#setting-text-documents').checked,
+    textPDFEnabled: $('#setting-text-pdf').checked, textOfficeEnabled: $('#setting-text-office').checked,
+    textDataEnabled: $('#setting-text-data').checked, textSourceEnabled: $('#setting-text-source').checked
+  };
+  $('#scan-profile-id').value = source.id || '';
+  $('#scan-profile-name').value = source.name || '';
+  $('#scan-profile-exclusions').checked = Boolean(source.exclusionsEnabled);
+  $('#scan-profile-system').checked = Boolean(source.excludeSystem);
+  $('#scan-profile-development').checked = Boolean(source.excludeDevelopment);
+  $('#scan-profile-patterns').value = (source.excludedPatterns || []).join('\n');
+  $('#scan-profile-images').checked = Boolean(source.imageAnalysisEnabled);
+  $('#scan-profile-exif').checked = Boolean(source.exifEnabled);
+  $('#scan-profile-text').checked = Boolean(source.textIndexEnabled);
+  $('#scan-profile-documents').checked = Boolean(source.textDocumentsEnabled);
+  $('#scan-profile-pdf').checked = Boolean(source.textPDFEnabled);
+  $('#scan-profile-office').checked = Boolean(source.textOfficeEnabled);
+  $('#scan-profile-data').checked = Boolean(source.textDataEnabled);
+  $('#scan-profile-source').checked = Boolean(source.textSourceEnabled);
+  $('#scan-profile-dialog-title').textContent = source.id ? 'Scanprofil bearbeiten' : 'Scanprofil hinzufügen';
+  $('#scan-profile-dialog-status').textContent = '';
+  dialog.showModal();
+}
+
+function saveScanProfile() {
+  const name = $('#scan-profile-name').value.trim();
+  if (!name) { $('#scan-profile-dialog-status').textContent = 'Bitte einen Namen eingeben.'; return; }
+  const existingID = $('#scan-profile-id').value;
+  const profile = {
+    id: existingID || `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    name, exclusionsEnabled: $('#scan-profile-exclusions').checked, excludeSystem: $('#scan-profile-system').checked,
+    excludeDevelopment: $('#scan-profile-development').checked,
+    excludedPatterns: $('#scan-profile-patterns').value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+    imageAnalysisEnabled: $('#scan-profile-images').checked, exifEnabled: $('#scan-profile-exif').checked,
+    textIndexEnabled: $('#scan-profile-text').checked, textDocumentsEnabled: $('#scan-profile-documents').checked,
+    textPDFEnabled: $('#scan-profile-pdf').checked, textOfficeEnabled: $('#scan-profile-office').checked,
+    textDataEnabled: $('#scan-profile-data').checked, textSourceEnabled: $('#scan-profile-source').checked
+  };
+  const index = scanProfiles.findIndex((candidate) => candidate.id === profile.id);
+  if (index >= 0) scanProfiles[index] = profile; else scanProfiles.push(profile);
+  renderScanProfiles();
+  $('#scan-profile-dialog').close();
+  $('#scan-profile-status').textContent = 'Änderung vorgemerkt – bitte Einstellungen speichern.';
+}
+
+function renderScanProfiles() {
+  const container = $('#scan-profile-list');
+  if (!container) return;
+  container.replaceChildren();
+  [...scanProfiles].sort((a, b) => a.name.localeCompare(b.name, 'de')).forEach((profile) => {
+    const row = document.createElement('div'); row.className = 'scan-profile-row';
+    const details = document.createElement('div');
+    const name = document.createElement('strong'); name.textContent = profile.name;
+    const summary = document.createElement('span');
+    summary.textContent = [profile.exclusionsEnabled && 'Ausschlüsse', profile.imageAnalysisEnabled && 'Bilder', profile.exifEnabled && 'EXIF', profile.textIndexEnabled && 'Volltext'].filter(Boolean).join(' · ') || 'Nur Dateiliste';
+    details.append(name, summary);
+    const actions = document.createElement('div');
+    const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary compact'; edit.textContent = 'Bearbeiten'; edit.addEventListener('click', () => openScanProfile(profile));
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'danger compact'; remove.textContent = 'Löschen';
+    remove.addEventListener('click', () => { if (!confirm(`Scanprofil „${profile.name}“ löschen? Zugeordnete Datenträger verwenden danach die globalen Einstellungen.`)) return; scanProfiles = scanProfiles.filter((candidate) => candidate.id !== profile.id); renderScanProfiles(); $('#scan-profile-status').textContent = 'Änderung vorgemerkt – bitte Einstellungen speichern.'; });
+    actions.append(edit, remove); row.append(details, actions); container.append(row);
+  });
+  if (!scanProfiles.length) { const empty = document.createElement('small'); empty.textContent = 'Noch keine wiederverwendbaren Profile angelegt.'; container.append(empty); }
+}
+
 async function saveSettings() {
   const button = $('#save-settings-button');
   button.disabled = true;
@@ -368,6 +454,7 @@ async function saveSettings() {
 	  scanExcludeSystem: $('#setting-scan-exclude-system').checked,
 	  scanExcludeDevelopment: $('#setting-scan-exclude-development').checked,
 	  scanExcludedPatterns: $('#setting-scan-excluded-patterns').value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+	  scanProfiles,
       imageAnalysisEnabled: $('#setting-image-analysis-enabled').checked,
       imageJPEGEnabled: $('#setting-image-jpeg').checked,
       imagePNGEnabled: $('#setting-image-png').checked,
@@ -1178,6 +1265,8 @@ async function createDirectoryLevel(driveID, directory, depth, driveLabel) {
 }
 
 async function openDriveDialog(drive) {
+	const settings = await window.go.main.App.GetSettings();
+	scanProfiles = (settings.scanProfiles || []).map((profile) => ({...profile, excludedPatterns: [...(profile.excludedPatterns || [])]}));
   $('#edit-drive-id').value = drive.id;
   $('#drive-dialog-title').textContent = driveName(drive);
   $('#edit-display-name').value = drive.displayName || '';
@@ -1186,6 +1275,10 @@ async function openDriveDialog(drive) {
   $('#edit-device-type').value = drive.deviceType || '';
   $('#edit-drive-note').value = drive.note || '';
   $('#edit-drive-tags').value = (drive.tags || []).join(', ');
+	const profileSelect = ensureDriveProfileSelect();
+	profileSelect.replaceChildren(new Option('Globale Einstellungen', ''));
+	[...scanProfiles].sort((a, b) => a.name.localeCompare(b.name, 'de')).forEach((profile) => profileSelect.add(new Option(profile.name, profile.id)));
+	profileSelect.value = [...profileSelect.options].some((option) => option.value === drive.scanProfileId) ? drive.scanProfileId : '';
   await loadStorageLocations(drive.storageLocation || '');
   $('#drive-detail-uuid').textContent = drive.uuid || 'Nicht verfügbar';
   $('#drive-detail-serial').textContent = drive.serial || 'Vom Datenträger nicht gemeldet';
@@ -1198,12 +1291,26 @@ async function openDriveDialog(drive) {
   $('#drive-dialog').showModal();
 }
 
+function ensureDriveProfileSelect() {
+  let select = $('#edit-scan-profile');
+  if (select) return select;
+  const label = document.createElement('label');
+  label.textContent = 'Scanprofil';
+  select = document.createElement('select');
+  select.id = 'edit-scan-profile';
+  const hint = document.createElement('small');
+  hint.textContent = 'Wird beim nächsten Scan angewendet';
+  label.append(select, hint);
+  $('#edit-drive-tags').closest('label').before(label);
+  return select;
+}
+
 async function saveDrive(event) {
   event.preventDefault();
   const button = $('#save-drive-button');
   button.disabled = true;
   try {
-    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value, $('#edit-storage-location').value, $('#edit-drive-note').value, parseTags($('#edit-drive-tags').value));
+    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value, $('#edit-storage-location').value, $('#edit-drive-note').value, ensureDriveProfileSelect().value, parseTags($('#edit-drive-tags').value));
     $('#drive-save-status').textContent = 'Gespeichert ✓';
     await Promise.all([loadDrives(), loadInfo()]);
     setTimeout(() => $('#drive-dialog').close(), 350);
@@ -1713,8 +1820,8 @@ async function setDuplicatePreference(group, file) {
 }
 
 window.runtime.EventsOn('scan:progress', (event) => {
-  $('#scan-title').textContent = event.phase === 'save' ? 'Katalog wird gespeichert …' : `${event.files.toLocaleString('de-DE')} Dateien gefunden`;
-  $('#scan-detail').textContent = event.path;
+  $('#scan-title').textContent = event.phase === 'prepare' ? `Scanprofil: ${event.profile || 'Globale Einstellungen'}` : event.phase === 'save' ? 'Katalog wird gespeichert …' : `${event.files.toLocaleString('de-DE')} Dateien gefunden`;
+  $('#scan-detail').textContent = event.phase === 'prepare' ? event.path : `${event.path}${event.profile ? ` · Profil: ${event.profile}` : ''}`;
 });
 window.runtime.EventsOn('duplicates:progress', (event) => {
   $('#duplicate-status').textContent = `${event.done.toLocaleString('de-DE')} von ${event.total.toLocaleString('de-DE')} Kandidaten geprüft …`;
@@ -1726,6 +1833,7 @@ $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
+$('#add-scan-profile-button').addEventListener('click', () => openScanProfile());
 $('#scan-report-button').addEventListener('click', () => { if (currentScanDiagnostic) renderScanDiagnostic(currentScanDiagnostic); });
 $('#create-backup-button').addEventListener('click', createBackup);
 $('#inspect-backup-button').addEventListener('click', inspectBackup);
