@@ -1,0 +1,17 @@
+.brand {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.brand img {
+  display: block;
+  flex: 0 0 32px;
+  height: 32px;
+  object-fit: contain;
+  width: 32px;
+}
+
+.brand span {
+  display: none;
+}
