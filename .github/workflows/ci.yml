@@ -23,4 +23,7 @@ jobs:
       # keeps the local workstation free of a Go module/build cache.
       - run: go mod tidy
       - run: go test -tags webkit2_41 ./...
-      - run: test -z "$(gofmt -l .)"
+      - name: Check Go formatting
+        run: |
+          gofmt -w .
+          git diff --exit-code
