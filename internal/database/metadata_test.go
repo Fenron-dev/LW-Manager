@@ -73,6 +73,42 @@ func TestDriveMetadataAndTags(t *testing.T) {
 	}
 }
 
+func TestScanningAnotherDrivePreservesExistingDriveContents(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	modified := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	firstRoot := t.TempDir()
+	secondRoot := t.TempDir()
+
+	if err := catalog.ReplaceDriveScan(DriveScan{
+		Path: firstRoot, Label: "ERSTER STICK", UUID: "volume-guid-first",
+		Files: []scanner.File{{Path: "first-only.txt", Filename: "first-only.txt", Size: 11, Modified: modified}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.ReplaceDriveScan(DriveScan{
+		Path: secondRoot, Label: "ZWEITER STICK", UUID: "volume-guid-second",
+		Files: []scanner.File{{Path: "second-only.txt", Filename: "second-only.txt", Size: 22, Modified: modified}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	drives, err := catalog.Drives()
+	if err != nil || len(drives) != 2 {
+		t.Fatalf("drives = %#v, %v; want two independent drives", drives, err)
+	}
+	result, err := catalog.Search("", "", "", 0, false, 50, 0)
+	if err != nil || result.Total != 2 || len(result.Files) != 2 {
+		t.Fatalf("files = %#v, %v; want both drive contents", result, err)
+	}
+	found := map[string]bool{}
+	for _, file := range result.Files {
+		found[file.Filename] = true
+	}
+	if !found["first-only.txt"] || !found["second-only.txt"] {
+		t.Fatalf("one drive was replaced while scanning another: %#v", found)
+	}
+}
+
 func TestRenameMergeAndDeleteTags(t *testing.T) {
 	catalog := openMetadataTestCatalog(t)
 	for _, volume := range []string{"volume-a", "volume-b"} {

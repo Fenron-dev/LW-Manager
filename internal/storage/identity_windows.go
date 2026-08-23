@@ -8,10 +8,47 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+const createNoWindow = 0x08000000
+
+var getVolumeNameForVolumeMountPoint = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetVolumeNameForVolumeMountPointW")
+
+func hiddenPowerShell(ctx context.Context, script string) *exec.Cmd {
+	command := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script)
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
+	return command
+}
+
+func canonicalWindowsVolumeID(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "/", `\`))
+	lower := strings.ToLower(value)
+	if start := strings.Index(lower, "volume{"); start >= 0 {
+		start += len("volume{")
+		if end := strings.Index(lower[start:], "}"); end >= 0 {
+			return lower[start : start+end]
+		}
+	}
+	return strings.ToLower(strings.Trim(value, `\`))
+}
+
+func volumeGUID(root *uint16) string {
+	buffer := make([]uint16, 128)
+	result, _, _ := getVolumeNameForVolumeMountPoint.Call(
+		uintptr(unsafe.Pointer(root)),
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(len(buffer)),
+	)
+	if result == 0 {
+		return ""
+	}
+	return canonicalWindowsVolumeID(windows.UTF16ToString(buffer))
+}
 
 func Identify(path string) (Identity, error) {
 	source, err := windows.UTF16PtrFromString(path)
@@ -28,13 +65,17 @@ func Identify(path string) (Identity, error) {
 	if err := windows.GetVolumeInformation(&root[0], &volume[0], uint32(len(volume)), &serial, &maxComponent, &flags, &filesystem[0], uint32(len(filesystem))); err != nil {
 		return Identity{}, err
 	}
-	identity := Identity{UUID: fmt.Sprintf("%08X", serial), Label: windows.UTF16ToString(volume), FSType: windows.UTF16ToString(filesystem)}
+	uuid := volumeGUID(&root[0])
+	if uuid == "" {
+		uuid = fmt.Sprintf("%08X", serial)
+	}
+	identity := Identity{UUID: uuid, Label: windows.UTF16ToString(volume), FSType: windows.UTF16ToString(filesystem)}
 	rootPath := windows.UTF16ToString(root)
 	if len(rootPath) >= 2 && rootPath[1] == ':' {
 		script := fmt.Sprintf("Get-Partition -DriveLetter '%s' | Get-Disk | Select-Object SerialNumber,FriendlyName,Manufacturer,BusType | ConvertTo-Json -Compress", strings.ToUpper(rootPath[:1]))
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		if data, commandErr := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output(); commandErr == nil {
+		if data, commandErr := hiddenPowerShell(ctx, script).Output(); commandErr == nil {
 			var hardware struct {
 				SerialNumber string
 				FriendlyName string
@@ -55,8 +96,8 @@ func Identify(path string) (Identity, error) {
 func ListVolumes() ([]Volume, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	script := `$items = Get-Partition | Where-Object DriveLetter | ForEach-Object { $p=$_; $d=$p | Get-Disk; $v=Get-Volume -DriveLetter $p.DriveLetter; if ($d.BusType -in @('USB','SD','MMC') -or $v.DriveType -eq 'Removable') { $logical=Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='"+$p.DriveLetter+":'"); [PSCustomObject]@{Path=($p.DriveLetter+':\\'); Label=$v.FileSystemLabel; UUID=$logical.VolumeSerialNumber; FSType=$v.FileSystem; Total=[int64]$v.Size; Used=[int64]($v.Size-$v.SizeRemaining)} } }; @($items) | ConvertTo-Json -Compress`
-	data, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output()
+	script := `$items = Get-Partition | Where-Object DriveLetter | ForEach-Object { $p=$_; $d=$p | Get-Disk; $v=Get-Volume -DriveLetter $p.DriveLetter; if ($d.BusType -in @('USB','SD','MMC') -or $v.DriveType -eq 'Removable') { $logical=Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='"+$p.DriveLetter+":'"); [PSCustomObject]@{Path=($p.DriveLetter+':\\'); Label=$v.FileSystemLabel; UUID=($(if ($v.UniqueId) {$v.UniqueId} else {$logical.VolumeSerialNumber})); FSType=$v.FileSystem; Total=[int64]$v.Size; Used=[int64]($v.Size-$v.SizeRemaining)} } }; @($items) | ConvertTo-Json -Compress`
+	data, err := hiddenPowerShell(ctx, script).Output()
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +118,7 @@ func ListVolumes() ([]Volume, error) {
 		if label == "" {
 			label = item.Path
 		}
-		volumes = append(volumes, Volume{Path: item.Path, Label: label, UUID: item.UUID, FSType: item.FSType, TotalSize: item.Total, UsedSize: item.Used, External: true})
+		volumes = append(volumes, Volume{Path: item.Path, Label: label, UUID: canonicalWindowsVolumeID(item.UUID), FSType: item.FSType, TotalSize: item.Total, UsedSize: item.Used, External: true})
 	}
 	return volumes, nil
 }
