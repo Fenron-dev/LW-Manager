@@ -4,9 +4,9 @@
 
 Portable Desktop-Anwendung zur Katalogisierung externer Datenträger. Der aktuelle Stand umfasst die Wails-Oberfläche, sichere Vault-Pfadlogik, einen rekursiven Metadaten-Scanner einschließlich Bildabmessungen, den portablen SQLite-Katalog, eine durchsuchbare Bibliothek und vollständig cloudbasierte Builds.
 
-Der abgeschlossene Funktionsstand wird als **VaultApp 1.0.0** für macOS ARM, macOS Intel, Windows x64 und Linux x64 veröffentlicht. Die stabilen Pakete werden ausschließlich durch GitHub Actions erzeugt und gemeinsam mit SHA-256-Prüfsummen im GitHub Release bereitgestellt.
+Der aktuelle stabile Funktionsstand wird als **VaultApp 1.0.1** für macOS ARM, macOS Intel, Windows x64 und Linux x64 veröffentlicht. Die stabilen Pakete werden ausschließlich durch GitHub Actions erzeugt und gemeinsam mit SHA-256-Prüfsummen im GitHub Release bereitgestellt. Version 1.0.1 unterdrückt unter Windows sichtbare PowerShell-Fenster und verwendet eindeutige Volume-GUIDs, damit verschiedene Datenträger zuverlässig getrennt katalogisiert bleiben.
 
-Bei einem erneuten Scan ersetzt VaultApp den aktiven Katalog vollständig durch den aktuellen Inhalt der Quelle. Der vorherige Stand wird als Archivstand gespeichert und erscheint nicht in der normalen Bibliothek. Wichtige Stände lassen sich gegen manuelles Löschen und die automatische Archivbereinigung schützen.
+Bei einem erneuten Scan ersetzt VaultApp ausschließlich den aktiven Katalog des ausgewählten Datenträgers durch dessen aktuellen Inhalt. Die Kataloge aller anderen Datenträger bleiben unverändert erhalten. Der vorherige Stand wird als Archivstand gespeichert und erscheint nicht in der normalen Bibliothek. Wichtige Stände lassen sich gegen manuelles Löschen und die automatische Archivbereinigung schützen.
 
 Der Tab **Archiv** vergleicht den aktuellen Inhalt mit einem wählbaren früheren Stand und markiert neue, entfernte, geänderte und unveränderte Pfade farblich. In der Bibliothek kann eine optionale Duplikatprüfung gestartet werden. Sie bildet zunächst Größenkandidaten und liest nur diese Dateien für einen SHA-256-Inhaltsvergleich.
 
