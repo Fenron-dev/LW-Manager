@@ -50,6 +50,37 @@ func volumeGUID(root *uint16) string {
 	return canonicalWindowsVolumeID(windows.UTF16ToString(buffer))
 }
 
+type windowsVolumeItem struct {
+	Path   string `json:"Path"`
+	Label  string `json:"Label"`
+	UUID   string `json:"UUID"`
+	FSType string `json:"FSType"`
+	Total  int64  `json:"Total"`
+	Used   int64  `json:"Used"`
+}
+
+// Windows PowerShell serialises a one-element pipeline as an object, while
+// multiple elements become an array. Accept both representations so volume
+// discovery does not depend on how many removable drives are connected.
+func decodeWindowsVolumes(data []byte) ([]windowsVolumeItem, error) {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		return []windowsVolumeItem{}, nil
+	}
+	if strings.HasPrefix(trimmed, "{") {
+		var item windowsVolumeItem
+		if err := json.Unmarshal([]byte(trimmed), &item); err != nil {
+			return nil, err
+		}
+		return []windowsVolumeItem{item}, nil
+	}
+	var items []windowsVolumeItem
+	if err := json.Unmarshal([]byte(trimmed), &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func Identify(path string) (Identity, error) {
 	source, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -101,15 +132,8 @@ func ListVolumes() ([]Volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	var items []struct {
-		Path   string `json:"Path"`
-		Label  string `json:"Label"`
-		UUID   string `json:"UUID"`
-		FSType string `json:"FSType"`
-		Total  int64  `json:"Total"`
-		Used   int64  `json:"Used"`
-	}
-	if err := json.Unmarshal(data, &items); err != nil {
+	items, err := decodeWindowsVolumes(data)
+	if err != nil {
 		return nil, err
 	}
 	volumes := make([]Volume, 0, len(items))
