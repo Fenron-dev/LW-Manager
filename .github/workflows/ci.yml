@@ -27,3 +27,14 @@ jobs:
         run: |
           gofmt -w .
           git diff --exit-code
+
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Test Windows implementation
+        run: go test ./...
