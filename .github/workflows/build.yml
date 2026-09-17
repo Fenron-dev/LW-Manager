@@ -2,6 +2,15 @@ name: Build portable apps
 
 on:
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Optional: vorhandenen Release-Tag ohne v direkt veröffentlichen'
+        required: false
+        type: string
+      confirmation:
+        description: 'Bei release_version exakt RELEASE eingeben'
+        required: false
+        type: string
   push:
     tags: ['v*']
 
@@ -9,7 +18,36 @@ permissions:
   contents: write
 
 jobs:
+  prepare_release:
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_version != ''
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Validate and prepare release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.release_version }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ -n "$INPUT_VERSION" ]]; then
+            [[ "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Ungültige Version" >&2; exit 1; }
+            [[ "$INPUT_CONFIRMATION" == "RELEASE" ]] || { echo "Bestätigung muss RELEASE lauten" >&2; exit 1; }
+            tag="v$INPUT_VERSION"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "VaultApp $tag" --generate-notes --verify-tag
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: prepare_release
+    if: always() && (needs.prepare_release.result == 'success' || needs.prepare_release.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +67,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_version != '' && format('v{0}', inputs.release_version) || github.ref }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -40,8 +80,12 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
       - name: Determine application version
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.release_version }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ -n "$INPUT_VERSION" ]]; then
+            echo "APP_VERSION=$INPUT_VERSION" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
           else
             echo "APP_VERSION=$(sed -n 's/^var appVersion = "\([^"]*\)"$/\1/p' app.go)" >> "$GITHUB_ENV"
@@ -60,37 +104,47 @@ jobs:
             cp scripts/macos-start.command package/VaultApp-starten.command
             chmod +x package/VaultApp-starten.command
           fi
+      - name: Package release archive
+        if: needs.prepare_release.result == 'success'
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            archive="$RUNNER_TEMP/${{ matrix.artifact }}.zip"
+            tar -a -cf "$archive" -C package .
+          else
+            archive="$RUNNER_TEMP/${{ matrix.artifact }}.tar.gz"
+            tar -czf "$archive" -C package .
+          fi
+          echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
+      - name: Upload permanent release asset
+        if: needs.prepare_release.result == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare_release.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" "$RELEASE_ARCHIVE" --repo "$GITHUB_REPOSITORY" --clobber
       - uses: actions/upload-artifact@v4
+        if: needs.prepare_release.result == 'skipped'
         with:
           name: ${{ matrix.artifact }}
           path: package
           include-hidden-files: true
           if-no-files-found: error
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+  release_checksums:
+    if: always() && needs.prepare_release.result == 'success' && needs.build.result == 'success'
+    needs: [prepare_release, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - name: Create archives
-        shell: bash
+      - name: Download permanent release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare_release.outputs.tag }}
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'VaultApp-*' --dir release
+      - name: Create and upload checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare_release.outputs.tag }}
         run: |
-          mkdir release
-          for dir in artifacts/*; do
-            name="$(basename "$dir")"
-            if [[ "$name" == *windows* ]]; then
-              (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/release/$name.zip" .)
-            else
-              tar -czf "release/$name.tar.gz" -C "$dir" .
-            fi
-          done
           (cd release && sha256sum VaultApp-* > SHA256SUMS.txt)
-      - uses: softprops/action-gh-release@v2
-        with:
-          name: VaultApp ${{ github.ref_name }}
-          files: release/*
-          generate_release_notes: true
-          fail_on_unmatched_files: true
+          gh release upload "$RELEASE_TAG" release/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
