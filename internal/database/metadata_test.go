@@ -76,23 +76,35 @@ func TestDriveMetadataAndTags(t *testing.T) {
 func TestScanningAnotherDrivePreservesExistingDriveContents(t *testing.T) {
 	catalog := openMetadataTestCatalog(t)
 	modified := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
-	firstRoot := t.TempDir()
-	secondRoot := t.TempDir()
+	// Windows reuses mount letters such as E:\\ when sticks are exchanged.
+	// The volume identity, not the current mount path, must separate drives.
+	sharedRoot := t.TempDir()
 
 	if err := catalog.ReplaceDriveScan(DriveScan{
-		Path: firstRoot, Label: "ERSTER STICK", UUID: "volume-guid-first",
+		Path: sharedRoot, Label: "ERSTER STICK", UUID: "volume-guid-first",
 		Files: []scanner.File{{Path: "first-only.txt", Filename: "first-only.txt", Size: 11, Modified: modified}},
 	}); err != nil {
 		t.Fatal(err)
 	}
+	drives, err := catalog.Drives()
+	if err != nil || len(drives) != 1 {
+		t.Fatalf("first drive = %#v, %v", drives, err)
+	}
+	if err := catalog.UpdateDrive(drives[0].ID, "", "", "", "", "", "", "first-profile", nil); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := catalog.ScanProfileID("volume-guid-second", sharedRoot)
+	if err != nil || profile != "" {
+		t.Fatalf("new drive inherited profile %q from reused mount path: %v", profile, err)
+	}
 	if err := catalog.ReplaceDriveScan(DriveScan{
-		Path: secondRoot, Label: "ZWEITER STICK", UUID: "volume-guid-second",
+		Path: sharedRoot, Label: "ZWEITER STICK", UUID: "volume-guid-second",
 		Files: []scanner.File{{Path: "second-only.txt", Filename: "second-only.txt", Size: 22, Modified: modified}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	drives, err := catalog.Drives()
+	drives, err = catalog.Drives()
 	if err != nil || len(drives) != 2 {
 		t.Fatalf("drives = %#v, %v; want two independent drives", drives, err)
 	}

@@ -34,7 +34,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.0.2-dev"
+var appVersion = "1.0.3-dev"
 
 type App struct {
 	ctx        context.Context
@@ -2225,18 +2225,37 @@ func (a *App) ScanVolume(path string) (ScanResult, error) {
 	for _, volume := range volumes {
 		candidate := filepath.Clean(volume.Path)
 		if requested == candidate || (goruntime.GOOS == "windows" && strings.EqualFold(requested, candidate)) {
-			return a.scanPath(candidate)
+			return a.scanPathWithIdentity(candidate, storage.Identity{UUID: volume.UUID, Label: volume.Label, FSType: volume.FSType})
 		}
 	}
 	return ScanResult{}, fmt.Errorf("Datenträger ist nicht mehr angeschlossen oder wurde nicht erkannt")
 }
 
 func (a *App) scanPath(selected string) (ScanResult, error) {
+	return a.scanPathWithIdentity(selected, storage.Identity{})
+}
+
+func (a *App) scanPathWithIdentity(selected string, detected storage.Identity) (ScanResult, error) {
 	a.scanMu.Lock()
 	defer a.scanMu.Unlock()
 	started := time.Now()
 	settings := a.currentSettings()
-	identity, _ := storage.Identify(selected)
+	identity := detected
+	if identified, identifyErr := storage.Identify(selected); identifyErr == nil {
+		if identity.UUID == "" {
+			identity.UUID = identified.UUID
+		}
+		if identified.Label != "" {
+			identity.Label = identified.Label
+		}
+		if identified.FSType != "" {
+			identity.FSType = identified.FSType
+		}
+		identity.Vendor = identified.Vendor
+		identity.Model = identified.Model
+		identity.Serial = identified.Serial
+		identity.DeviceType = identified.DeviceType
+	}
 	profileID, profileErr := a.catalog.ScanProfileID(identity.UUID, selected)
 	if profileErr != nil {
 		return ScanResult{}, fmt.Errorf("Scanprofil bestimmen: %w", profileErr)

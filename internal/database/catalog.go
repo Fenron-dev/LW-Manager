@@ -768,6 +768,10 @@ func (c *Catalog) ScanProfileID(uuid, path string) (string, error) {
 		if err != sql.ErrNoRows {
 			return "", err
 		}
+		// A mount path is not a persistent identity. Windows commonly reuses a
+		// drive letter for different removable media, so falling back to the
+		// path here would leak the previous drive's profile to the new drive.
+		return "", nil
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -1396,12 +1400,6 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 		return err
 	}
 	defer tx.Rollback()
-	if scan.UUID != "" {
-		_, err = tx.Exec(`UPDATE drives SET uuid=? WHERE vault_path=? AND uuid<>? AND NOT EXISTS(SELECT 1 FROM drives WHERE uuid=?)`, uuid, absolute, uuid, uuid)
-		if err != nil {
-			return err
-		}
-	}
 	if _, err = tx.Exec(`INSERT INTO drives(uuid,label,vault_path,total_size,used_size,fs_type,vendor,model,serial,detected_type,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
 		ON CONFLICT(uuid) DO UPDATE SET label=excluded.label,vault_path=excluded.vault_path,total_size=excluded.total_size,used_size=excluded.used_size,fs_type=excluded.fs_type,vendor=excluded.vendor,model=excluded.model,serial=excluded.serial,detected_type=excluded.detected_type,updated_at=CURRENT_TIMESTAMP`, uuid, scan.Label, absolute, scan.TotalSize, scan.UsedSize, scan.FSType, scan.Vendor, scan.Model, scan.Serial, scan.DeviceType); err != nil {
 		return err
