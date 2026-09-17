@@ -108,11 +108,12 @@ jobs:
         if: needs.prepare_release.result == 'success'
         shell: bash
         run: |
+          mkdir -p release
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            archive="$RUNNER_TEMP/${{ matrix.artifact }}.zip"
+            archive="release/${{ matrix.artifact }}.zip"
             tar -a -cf "$archive" -C package .
           else
-            archive="$RUNNER_TEMP/${{ matrix.artifact }}.tar.gz"
+            archive="release/${{ matrix.artifact }}.tar.gz"
             tar -czf "$archive" -C package .
           fi
           echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
