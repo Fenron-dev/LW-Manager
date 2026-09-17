@@ -104,18 +104,43 @@ jobs:
             cp scripts/macos-start.command package/VaultApp-starten.command
             chmod +x package/VaultApp-starten.command
           fi
-      - name: Package release archive
-        if: needs.prepare_release.result == 'success'
+      - name: Package and verify Windows release archive
+        if: needs.prepare_release.result == 'success' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          $archive = "release/${{ matrix.artifact }}.zip"
+          $archivePath = Join-Path $PWD $archive
+          $packagePath = (Resolve-Path package).Path
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory(
+            $packagePath,
+            $archivePath,
+            [System.IO.Compression.CompressionLevel]::Optimal,
+            $false
+          )
+
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+          try {
+            $entries = @($zip.Entries | ForEach-Object { $_.FullName })
+            if ($entries -notcontains '.vaultapp') {
+              throw 'Windows release ZIP does not contain the portable .vaultapp marker.'
+            }
+            if ($entries -notcontains 'VaultApp.exe') {
+              throw 'Windows release ZIP does not contain VaultApp.exe.'
+            }
+          } finally {
+            $zip.Dispose()
+          }
+          "RELEASE_ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Package and verify Unix release archive
+        if: needs.prepare_release.result == 'success' && runner.os != 'Windows'
         shell: bash
         run: |
           mkdir -p release
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            archive="release/${{ matrix.artifact }}.zip"
-            tar -a -cf "$archive" -C package .
-          else
-            archive="release/${{ matrix.artifact }}.tar.gz"
-            tar -czf "$archive" -C package .
-          fi
+          archive="release/${{ matrix.artifact }}.tar.gz"
+          tar -czf "$archive" -C package .
+          tar -tzf "$archive" >/dev/null
           echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
       - name: Upload permanent release asset
         if: needs.prepare_release.result == 'success'
