@@ -9,7 +9,7 @@ import (
 
 func TestMatchingEjectVolumeRejectsReusedMountPath(t *testing.T) {
 	volumes := []storage.Volume{{Path: "/Volumes/USB", UUID: "new-volume", External: true}}
-	if _, err := matchingEjectVolume("/Volumes/USB", "old-volume", volumes); err == nil || !strings.Contains(err.Error(), "Identität") {
+	if _, err := matchingEjectVolume("/Volumes/USB", "old-volume", volumes); err == nil || !strings.Contains(err.Error(), "hat sich geändert") {
 		t.Fatalf("reused mount path was not rejected: %v", err)
 	}
 	if matched, err := matchingEjectVolume("/Volumes/USB", "new-volume", volumes); err != nil || matched.UUID != "new-volume" {
