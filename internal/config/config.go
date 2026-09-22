@@ -27,6 +27,11 @@ type ScanProfile struct {
 	TextSourceEnabled    bool     `json:"textSourceEnabled"`
 }
 
+type DriveStatus struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type Settings struct {
 	Version                          int           `json:"version"`
 	VolumeDetectionEnabled           bool          `json:"volumeDetectionEnabled"`
@@ -48,6 +53,7 @@ type Settings struct {
 	ScanExcludeDevelopment           bool          `json:"scanExcludeDevelopment"`
 	ScanExcludedPatterns             []string      `json:"scanExcludedPatterns"`
 	ScanProfiles                     []ScanProfile `json:"scanProfiles"`
+	DriveStatuses                    []DriveStatus `json:"driveStatuses"`
 	ImageAnalysisEnabled             bool          `json:"imageAnalysisEnabled"`
 	ImageJPEGEnabled                 bool          `json:"imageJPEGEnabled"`
 	ImagePNGEnabled                  bool          `json:"imagePNGEnabled"`
@@ -128,7 +134,8 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 22, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 23, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		DriveStatuses: []DriveStatus{{"ok", "OK"}, {"in-pruefung", "In Prüfung"}, {"fehlerhaft", "Fehlerhaft"}, {"defekt", "Defekt"}, {"verliehen", "Verliehen"}, {"vermisst", "Vermisst"}, {"entsorgt", "Entsorgt"}},
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{}, ScanProfiles: []ScanProfile{},
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,
@@ -173,7 +180,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 22
+	settings.Version = 23
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
@@ -193,6 +200,21 @@ func Save(path string, settings Settings) error {
 }
 
 func (settings Settings) Validate() error {
+	if len(settings.DriveStatuses) == 0 || len(settings.DriveStatuses) > 50 {
+		return fmt.Errorf("1 bis 50 Datenträgerstatus sind erforderlich")
+	}
+	statusIDs := map[string]bool{}
+	statusNames := map[string]bool{}
+	for _, status := range settings.DriveStatuses {
+		id, name := strings.TrimSpace(status.ID), strings.TrimSpace(status.Name)
+		if id == "" || len(id) > 80 || strings.ContainsAny(id, " /\\") || statusIDs[id] {
+			return fmt.Errorf("Datenträgerstatus-ID %q ist ungültig oder doppelt vorhanden", status.ID)
+		}
+		if name == "" || len(name) > 80 || statusNames[strings.ToLower(name)] {
+			return fmt.Errorf("Datenträgerstatus %q ist leer, zu lang oder doppelt vorhanden", status.Name)
+		}
+		statusIDs[id], statusNames[strings.ToLower(name)] = true, true
+	}
 	if err := validatePatterns(settings.ScanExcludedPatterns); err != nil {
 		return err
 	}

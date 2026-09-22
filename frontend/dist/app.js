@@ -17,6 +17,31 @@ const duplicateSelections = new Map();
 let inspectedBackup = null;
 let currentScanDiagnostic = null;
 let scanProfiles = [];
+let driveStatuses = [];
+
+function renderDriveStatuses() {
+  const list = $('#drive-status-list');
+  list.replaceChildren();
+  driveStatuses.forEach((status) => {
+    const row = document.createElement('div');
+    row.className = 'drive-status-row';
+    const name = document.createElement('input');
+    name.value = status.name;
+    name.maxLength = 80;
+    name.setAttribute('aria-label', 'Statusname');
+    name.addEventListener('input', () => { status.name = name.value; });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'secondary';
+    remove.textContent = 'Entfernen';
+    remove.addEventListener('click', () => {
+      driveStatuses = driveStatuses.filter((item) => item.id !== status.id);
+      renderDriveStatuses();
+    });
+    row.append(name, remove);
+    list.append(row);
+  });
+}
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -97,6 +122,9 @@ async function showSettings() {
   $('#settings-status').textContent = '';
   try {
     const settings = await window.go.main.App.GetSettings();
+    driveStatuses = (settings.driveStatuses || []).map((status) => ({...status}));
+    renderDriveStatuses();
+    $('#vault-location-path').textContent = (await window.go.main.App.GetAppInfo()).vaultRoot;
     $('#setting-volume-detection').checked = settings.volumeDetectionEnabled;
     $('#setting-ai-enabled').checked = settings.aiEnabled;
     $('#setting-ai-provider').value = settings.aiProvider;
@@ -199,6 +227,26 @@ async function showSettings() {
     await loadScanDiagnostics();
     await loadManagedBackups();
   } catch (error) { $('#settings-status').textContent = `Fehler: ${error}`; }
+}
+
+async function selectVault(create) {
+  const status = $('#vault-location-status');
+  const open = $('#open-vault-button');
+  const fresh = $('#create-vault-button');
+  open.disabled = fresh.disabled = true;
+  status.textContent = 'Vault wird geöffnet …';
+  try {
+    const result = await window.go.main.App.SelectVault(create);
+    if (result.cancelled) { status.textContent = ''; return; }
+    libraryPage = 1;
+    extensionsLoaded = false;
+    currentScanDiagnostic = null;
+    inspectedBackup = null;
+    await Promise.all([loadInfo(), loadDrives()]);
+    await showSettings();
+    status.textContent = `Vault geöffnet: ${result.path}`;
+  } catch (error) { status.textContent = `Vault-Wechsel fehlgeschlagen: ${error}`; }
+  finally { open.disabled = fresh.disabled = false; }
 }
 
 function renderScanDiagnostic(diagnostic) {
@@ -415,7 +463,8 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 14,
+      version: 23,
+      driveStatuses: driveStatuses.map((status) => ({id: status.id, name: status.name.trim()})),
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       aiEnabled: $('#setting-ai-enabled').checked,
       aiProvider: $('#setting-ai-provider').value,
@@ -768,7 +817,12 @@ async function runScan(scanAction, preparingMessage) {
       currentScanDiagnostic = result;
       $('#scan-report-button').classList.toggle('hidden', !result.logPath && !result.issues?.length);
       extensionsLoaded = false;
-      await Promise.all([loadInfo(), loadDrives()]);
+      const [, drives] = await Promise.all([loadInfo(), loadDrives()]);
+      const drive = drives.find((item) => sameVolume(item, {uuid: result.driveUUID, path: result.drive}));
+      if (drive) {
+        try { await openDriveDialog(drive); }
+        catch (error) { $('#scan-detail').textContent += ` · Bearbeitung konnte nicht geöffnet werden: ${error}`; }
+      }
     }
   } catch (error) {
     $('#scan-title').textContent = 'Scan fehlgeschlagen';
@@ -914,7 +968,8 @@ async function refreshTags() {
 }
 
 async function loadDrives() {
-  const [drives] = await Promise.all([window.go.main.App.GetDrives(), refreshTags()]);
+  const [drives, settings] = await Promise.all([window.go.main.App.GetDrives(), window.go.main.App.GetSettings(), refreshTags()]);
+  const statusNames = new Map((settings.driveStatuses || []).map((status) => [status.id, status.name]));
   await loadConnectedVolumes(drives);
   const list = $('#drive-list');
   list.replaceChildren();
@@ -939,7 +994,7 @@ async function loadDrives() {
     const heading = document.createElement('strong');
     heading.textContent = driveName(drive);
     const source = document.createElement('span');
-    source.textContent = [drive.online ? 'Online' : 'Offline', drive.inventoryNumber ? `Nr. ${drive.inventoryNumber}` : '', drive.label, drive.storageLocation ? `Lager: ${drive.storageLocation}` : ''].filter(Boolean).join(' · ');
+    source.textContent = [drive.online ? 'Online' : 'Offline', drive.statusId ? `Status: ${statusNames.get(drive.statusId) || drive.statusId}` : '', drive.inventoryNumber ? `Nr. ${drive.inventoryNumber}` : '', drive.label, drive.storageLocation ? `Lager: ${drive.storageLocation}` : ''].filter(Boolean).join(' · ');
     identity.append(heading, source);
     appendTagBadges(identity, drive.tags);
     const kind = document.createElement('span');
@@ -999,6 +1054,7 @@ async function loadDrives() {
   }
   filter.value = [...filter.options].some((option) => option.value === selectedDrive) ? selectedDrive : '0';
   compareDrive.value = [...compareDrive.options].some((option) => option.value === selectedCompareDrive) ? selectedCompareDrive : '0';
+  return drives;
 }
 
 function sameVolume(drive, volume) {
@@ -1338,6 +1394,10 @@ async function createDirectoryLevel(driveID, directory, depth, driveLabel) {
 
 async function openDriveDialog(drive) {
 	const settings = await window.go.main.App.GetSettings();
+	const statusSelect = $('#edit-drive-status');
+	statusSelect.replaceChildren(new Option('Nicht festgelegt', ''));
+	(settings.driveStatuses || []).forEach((status) => statusSelect.add(new Option(status.name, status.id)));
+	statusSelect.value = drive.statusId || '';
 	scanProfiles = (settings.scanProfiles || []).map((profile) => ({...profile, excludedPatterns: [...(profile.excludedPatterns || [])]}));
   $('#edit-drive-id').value = drive.id;
   $('#drive-dialog-title').textContent = driveName(drive);
@@ -1382,7 +1442,7 @@ async function saveDrive(event) {
   const button = $('#save-drive-button');
   button.disabled = true;
   try {
-    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value, $('#edit-storage-location').value, $('#edit-drive-note').value, ensureDriveProfileSelect().value, parseTags($('#edit-drive-tags').value));
+    await window.go.main.App.UpdateDrive(Number($('#edit-drive-id').value), $('#edit-display-name').value, $('#edit-inventory-number').value, $('#edit-manufacturer').value, $('#edit-device-type').value, $('#edit-storage-location').value, $('#edit-drive-status').value, $('#edit-drive-note').value, ensureDriveProfileSelect().value, parseTags($('#edit-drive-tags').value));
     $('#drive-save-status').textContent = 'Gespeichert ✓';
     await Promise.all([loadDrives(), loadInfo()]);
     setTimeout(() => $('#drive-dialog').close(), 350);
@@ -1905,6 +1965,12 @@ $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
+$('#add-drive-status-button').addEventListener('click', () => {
+  driveStatuses.push({id: `status-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: 'Neuer Status'});
+  renderDriveStatuses();
+});
+$('#open-vault-button').addEventListener('click', () => selectVault(false));
+$('#create-vault-button').addEventListener('click', () => selectVault(true));
 $('#add-scan-profile-button').addEventListener('click', () => openScanProfile());
 $('#scan-report-button').addEventListener('click', () => { if (currentScanDiagnostic) renderScanDiagnostic(currentScanDiagnostic); });
 $('#create-backup-button').addEventListener('click', createBackup);

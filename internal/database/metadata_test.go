@@ -40,14 +40,14 @@ func TestDriveMetadataAndTags(t *testing.T) {
 	if err != nil || len(drives) != 1 {
 		t.Fatalf("drives = %#v, %v", drives, err)
 	}
-	if err := catalog.UpdateDrive(drives[0].ID, "Archiv A", "17", "Acme", "USB-C Stick", "Schrank", "Übergabe an Team", "profile-media", []string{" Mobil ", "kunde A", "mobil"}); err != nil {
+	if err := catalog.UpdateDrive(drives[0].ID, "Archiv A", "17", "Acme", "USB-C Stick", "Schrank", "ok", "Übergabe an Team", "profile-media", []string{" Mobil ", "kunde A", "mobil"}); err != nil {
 		t.Fatal(err)
 	}
 	drives, err = catalog.Drives()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if drives[0].Note != "Übergabe an Team" || drives[0].ScanProfileID != "profile-media" || !reflect.DeepEqual(drives[0].Tags, []string{"kunde A", "Mobil"}) {
+	if drives[0].StatusID != "ok" || drives[0].Note != "Übergabe an Team" || drives[0].ScanProfileID != "profile-media" || !reflect.DeepEqual(drives[0].Tags, []string{"kunde A", "Mobil"}) {
 		t.Fatalf("metadata = note %q, tags %#v", drives[0].Note, drives[0].Tags)
 	}
 	profileID, err := catalog.ScanProfileID("test-volume", root)
@@ -55,6 +55,10 @@ func TestDriveMetadataAndTags(t *testing.T) {
 		t.Fatalf("scan profile = %q, %v", profileID, err)
 	}
 	scanMetadataTestDrive(t, catalog, root, 0, "second.txt")
+	drives, err = catalog.Drives()
+	if err != nil || drives[0].StatusID != "ok" {
+		t.Fatalf("status after rescan = %#v, %v", drives, err)
+	}
 	profileID, err = catalog.ScanProfileID("volume:test-volume", root)
 	if err != nil || profileID != "profile-media" {
 		t.Fatalf("scan profile after rescan = %q, %v", profileID, err)
@@ -90,7 +94,7 @@ func TestScanningAnotherDrivePreservesExistingDriveContents(t *testing.T) {
 	if err != nil || len(drives) != 1 {
 		t.Fatalf("first drive = %#v, %v", drives, err)
 	}
-	if err := catalog.UpdateDrive(drives[0].ID, "", "", "", "", "", "", "first-profile", nil); err != nil {
+	if err := catalog.UpdateDrive(drives[0].ID, "", "", "", "", "", "", "", "first-profile", nil); err != nil {
 		t.Fatal(err)
 	}
 	profile, err := catalog.ScanProfileID("volume-guid-second", sharedRoot)
@@ -132,10 +136,10 @@ func TestRenameMergeAndDeleteTags(t *testing.T) {
 	if err != nil || len(drives) != 2 {
 		t.Fatalf("drives = %#v, %v", drives, err)
 	}
-	if err := catalog.UpdateDrive(drives[0].ID, "", "", "", "", "", "", "", []string{"Mobil", "Kunde"}); err != nil {
+	if err := catalog.UpdateDrive(drives[0].ID, "", "", "", "", "", "", "", "", []string{"Mobil", "Kunde"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := catalog.UpdateDrive(drives[1].ID, "", "", "", "", "", "", "", []string{"Archiv"}); err != nil {
+	if err := catalog.UpdateDrive(drives[1].ID, "", "", "", "", "", "", "", "", []string{"Archiv"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.RenameTag("mobil", "Unterwegs"); err != nil {
@@ -381,7 +385,7 @@ func TestExportComparisonStreamsFilteredEntriesAndSnapshotMetadata(t *testing.T)
 	if err != nil || len(drives) != 1 {
 		t.Fatalf("drives = %#v, %v", drives, err)
 	}
-	if err := catalog.UpdateDrive(drives[0].ID, "Archivmedium", "", "", "", "", "", "", nil); err != nil {
+	if err := catalog.UpdateDrive(drives[0].ID, "Archivmedium", "", "", "", "", "", "", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	snapshots, err := catalog.Snapshots(drives[0].ID)

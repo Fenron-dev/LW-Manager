@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS drives (
     device_type TEXT,
     detected_type TEXT,
     storage_location TEXT,
+    status_id TEXT NOT NULL DEFAULT 'ok',
     note TEXT,
 	scan_profile_id TEXT NOT NULL DEFAULT '',
     used_size INTEGER NOT NULL DEFAULT 0,

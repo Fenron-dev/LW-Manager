@@ -34,7 +34,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.0.5-dev"
+var appVersion = "1.0.6-dev"
 
 type App struct {
 	ctx        context.Context
@@ -61,6 +61,7 @@ type AppInfo struct {
 type ScanResult struct {
 	Cancelled       bool            `json:"cancelled"`
 	Drive           string          `json:"drive"`
+	DriveUUID       string          `json:"driveUUID"`
 	Profile         string          `json:"profile"`
 	Files           int             `json:"files"`
 	Bytes           int64           `json:"bytes"`
@@ -189,8 +190,19 @@ func NewApp() *App { return &App{} }
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
-	a.root, a.initErr = vault.ResolveRoot()
+	selected, err := vault.LoadSelection()
+	a.root, a.initErr = selected, err
 	if a.initErr != nil {
+		return
+	}
+	if a.root == "" {
+		a.root, a.initErr = vault.ResolveRoot()
+	}
+	if a.initErr != nil {
+		return
+	}
+	if selected != "" && !vault.IsExistingVault(a.root) {
+		a.initErr = fmt.Errorf("gewählter Vault ist nicht erreichbar oder ungültig: %s", a.root)
 		return
 	}
 	if a.initErr = vault.EnsureLayout(a.root); a.initErr != nil {
@@ -216,6 +228,84 @@ func (a *App) Shutdown(context.Context) {
 	if a.catalog != nil {
 		_ = a.catalog.Close()
 	}
+}
+
+type VaultSwitchResult struct {
+	Cancelled bool   `json:"cancelled"`
+	Path      string `json:"path"`
+}
+
+// SelectVault opens an existing marked vault or creates one in an empty folder.
+func (a *App) SelectVault(create bool) (VaultSwitchResult, error) {
+	if !a.scanMu.TryLock() {
+		return VaultSwitchResult{}, fmt.Errorf("während eines Scans kann der Vault nicht gewechselt werden")
+	}
+	defer a.scanMu.Unlock()
+	title := "Vorhandenen LW-Manager-Vault auswählen"
+	if create {
+		title = "Leeren Ordner für neuen LW-Manager-Vault auswählen"
+	}
+	selected, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{Title: title})
+	if err != nil {
+		return VaultSwitchResult{}, err
+	}
+	if selected == "" {
+		return VaultSwitchResult{Cancelled: true}, nil
+	}
+	root, err := filepath.EvalSymlinks(selected)
+	if err != nil {
+		return VaultSwitchResult{}, err
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return VaultSwitchResult{}, err
+	}
+	if a.initErr == nil && filepath.Clean(a.root) == root {
+		return VaultSwitchResult{Path: root}, nil
+	}
+	if create {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			return VaultSwitchResult{}, err
+		}
+		if len(entries) != 0 {
+			return VaultSwitchResult{}, fmt.Errorf("für einen neuen Vault muss der gewählte Ordner leer sein")
+		}
+		if err := vault.EnsureLayout(root); err != nil {
+			return VaultSwitchResult{}, err
+		}
+	} else if !vault.IsExistingVault(root) {
+		return VaultSwitchResult{}, fmt.Errorf("kein vorhandener LW-Manager-Vault in diesem Ordner gefunden")
+	}
+	configPath, err := vault.DataPath(root, "config.json")
+	if err != nil {
+		return VaultSwitchResult{}, err
+	}
+	settings, err := appconfig.Load(configPath)
+	if err != nil {
+		return VaultSwitchResult{}, err
+	}
+	dbPath, err := vault.DataPath(root, "vault.db")
+	if err != nil {
+		return VaultSwitchResult{}, err
+	}
+	catalog, err := database.Open(dbPath)
+	if err != nil {
+		return VaultSwitchResult{}, err
+	}
+	if err := vault.SaveSelection(root); err != nil {
+		_ = catalog.Close()
+		return VaultSwitchResult{}, err
+	}
+	old := a.catalog
+	a.root, a.configPath, a.catalog, a.initErr = root, configPath, catalog, nil
+	a.settingsMu.Lock()
+	a.settings = settings
+	a.settingsMu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	return VaultSwitchResult{Path: root}, nil
 }
 
 func (a *App) GetAppInfo() AppInfo {
@@ -1113,7 +1203,7 @@ func hashFile(path string) (string, int64, error) {
 	return hex.EncodeToString(hash.Sum(nil)), bytesRead, nil
 }
 
-func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note, scanProfileID string, tags []string) error {
+func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, statusID, note, scanProfileID string, tags []string) error {
 	if a.initErr != nil || a.catalog == nil {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
@@ -1129,7 +1219,19 @@ func (a *App) UpdateDrive(id int64, displayName, inventoryNumber, manufacturer, 
 			return fmt.Errorf("das gewählte Scanprofil ist nicht mehr vorhanden")
 		}
 	}
-	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, note, scanProfileID, tags)
+	if statusID != "" {
+		found := false
+		for _, status := range a.currentSettings().DriveStatuses {
+			if status.ID == statusID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("der gewählte Datenträgerstatus ist nicht mehr vorhanden")
+		}
+	}
+	return a.catalog.UpdateDrive(id, displayName, inventoryNumber, manufacturer, deviceType, storageLocation, statusID, note, scanProfileID, tags)
 }
 
 func (a *App) GetStorageLocations() ([]string, error) {
@@ -1342,6 +1444,22 @@ func (a *App) GetSettings() appconfig.Settings {
 func (a *App) SaveSettings(settings appconfig.Settings) error {
 	if a.initErr != nil || a.configPath == "" {
 		return fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
+	}
+	if err := settings.Validate(); err != nil {
+		return err
+	}
+	configured := make(map[string]bool, len(settings.DriveStatuses))
+	for _, status := range settings.DriveStatuses {
+		configured[status.ID] = true
+	}
+	drives, err := a.catalog.Drives()
+	if err != nil {
+		return err
+	}
+	for _, drive := range drives {
+		if drive.StatusID != "" && !configured[drive.StatusID] {
+			return fmt.Errorf("Status %q wird noch von Datenträger %q verwendet", drive.StatusID, drive.Label)
+		}
 	}
 	if !settings.ThumbnailCacheUnlimited {
 		cache, err := vault.AssetPath(a.root, "thumbnails")
@@ -2356,7 +2474,7 @@ func (a *App) scanPathWithIdentity(selected string, detected storage.Identity) (
 		return ScanResult{}, err
 	}
 	diagnostic := ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated}
-	result := ScanResult{Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}
+	result := ScanResult{Drive: selected, DriveUUID: identity.UUID, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}
 	result.LogPath = a.writeScanDiagnostic(diagnostic)
 	wailsruntime.EventsEmit(a.ctx, "scan:complete", result)
 	return result, nil

@@ -8,6 +8,8 @@ Das aktuelle stabile Release heißt **LW-Manager 1.0.5** und ergänzt einen sich
 
 Bei einem erneuten Scan ersetzt LW-Manager ausschließlich den aktiven Katalog des ausgewählten Datenträgers durch dessen aktuellen Inhalt. Die Kataloge aller anderen Datenträger bleiben unverändert erhalten. Der vorherige Stand wird als Archivstand gespeichert und erscheint nicht in der normalen Bibliothek. Wichtige Stände lassen sich gegen manuelles Löschen und die automatische Archivbereinigung schützen.
 
+Ab 1.0.6-dev öffnet sich nach einem erfolgreich abgeschlossenen Scan automatisch die Bearbeitung des gerade eingelesenen Datenträgers. Dort lassen sich Name, Inventarnummer und Status direkt ergänzen. Die Statusbezeichnungen können unter **Einstellungen → Datenträgerstatus** umbenannt und ergänzt werden; verwendete Status bleiben beim erneuten Scan erhalten und können nicht versehentlich gelöscht werden.
+
 Der Tab **Archiv** vergleicht den aktuellen Inhalt mit einem wählbaren früheren Stand und markiert neue, entfernte, geänderte und unveränderte Pfade farblich. In der Bibliothek kann eine optionale Duplikatprüfung gestartet werden. Sie bildet zunächst Größenkandidaten und liest nur diese Dateien für einen SHA-256-Inhaltsvergleich.
 
 Die Duplikatprüfung kann in den Einstellungen vollständig deaktiviert werden. Ein Limit pro Kandidat und ein Gesamtbudget pro Prüflauf begrenzen das vom Datenträger gelesene Datenvolumen; beide Grenzen lassen sich unabhängig auf unbegrenzt setzen. Bereits vorhandene Prüfsummen werden erneut verwendet, solange der katalogisierte Dateistand unverändert bleibt. Die Originaldateien werden dabei niemals in den Vault kopiert.
@@ -31,6 +33,8 @@ Ein stabiles Release wird ab Version 0.50.0-dev ausschließlich bewusst unter **
 ## Portable Struktur
 
 Beim ersten Start werden relativ zur `.vaultapp`-Markierung `data/` und `assets/` angelegt. Mit `VAULT_ROOT` kann für Entwicklung und Diagnose ein anderer Stammordner gewählt werden. GGUF-Modelle werden bewusst nicht im Repository oder Release gespeichert.
+
+Unter **Einstellungen → Vault-Speicherort** lässt sich ein vorhandener LW-Manager-Vault öffnen oder in einem leeren Ordner ein neuer anlegen. Die Auswahl wird pro Benutzerkonto außerhalb des Vaults gespeichert; vorhandene Daten werden weder verschoben noch gelöscht. Ein bereits eingebundenes Netzlaufwerk kann gewählt werden, sofern es SQLite-Dateisperren zuverlässig unterstützt. Den gleichen Vault niemals gleichzeitig in mehreren App-Instanzen öffnen; rohe Cloud-URLs werden nicht unterstützt.
 
 Die Einstellungen werden portabel unter `data/config.json` abgelegt. Dort lassen sich die Archivierung früherer Scans, die Anzahl aufbewahrter Archivstände sowie die Größenlimits für Bild-, PDF- und Video-Vorschauen steuern. Die Bildanalyse für JPEG, PNG, GIF und HEIC/HEIF kann insgesamt und je Format geschaltet werden. Für das Lesen der Bild-Header gelten ein Limit pro Datei und ein Gesamtbudget pro Scan; beide können wahlweise unbegrenzt sein. Bildvorschauen besitzen entsprechend ein Quelldatei- und ein Gesamtlimit für den portablen Thumbnail-Cache. Auf macOS erzeugt der vorhandene Systemdecoder auch HEIC/HEIF-Vorschauen; diese lassen sich separat deaktivieren. Optional erfasst der Scan außerdem Kamera, Aufnahmedatum, Objektiv und Orientierung aus JPEG-EXIF-Daten; GPS-Informationen werden bewusst nicht gespeichert. Auch dafür gelten ein Datei- und ein Gesamtbudget mit Unbegrenzt-Schaltern.
 

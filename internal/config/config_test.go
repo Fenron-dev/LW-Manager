@@ -73,6 +73,27 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	}
 }
 
+func TestDriveStatusesRemainStableWhenRenamed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	settings := Defaults()
+	settings.DriveStatuses[0].Name = "Einsatzbereit"
+	settings.DriveStatuses = append(settings.DriveStatuses, DriveStatus{ID: "ausgeliehen-extern", Name: "Bei Partner"})
+	if err := Save(path, settings); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.DriveStatuses[0].ID != "ok" || loaded.DriveStatuses[0].Name != "Einsatzbereit" || loaded.DriveStatuses[len(loaded.DriveStatuses)-1].Name != "Bei Partner" {
+		t.Fatalf("drive statuses = %#v", loaded.DriveStatuses)
+	}
+	loaded.DriveStatuses[1].Name = "Einsatzbereit"
+	if err := loaded.Validate(); err == nil {
+		t.Fatal("duplicate status name should be rejected")
+	}
+}
+
 func TestScanExclusionValidation(t *testing.T) {
 	settings := Defaults()
 	settings.ScanExcludedPatterns = []string{"project/["}
@@ -195,7 +216,7 @@ func TestLoadAddsDefaultsToOlderConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.ArchiveEnabled || !settings.VolumeDetectionEnabled || !settings.ImageAnalysisEnabled || settings.ImageHeaderMB != 4 || !settings.ThumbnailCacheUnlimited || settings.AIProvider != "ollama" {
+	if settings.ArchiveEnabled || !settings.VolumeDetectionEnabled || !settings.ImageAnalysisEnabled || settings.ImageHeaderMB != 4 || !settings.ThumbnailCacheUnlimited || settings.AIProvider != "ollama" || len(settings.DriveStatuses) == 0 {
 		t.Fatalf("legacy migration lost values or defaults: %+v", settings)
 	}
 }
