@@ -741,6 +741,80 @@ func (a *App) GetDrives() ([]database.Drive, error) {
 	return drives, nil
 }
 
+func externalHealthPath(path, uuid string) error {
+	volumes, err := storage.ListVolumes()
+	if err != nil {
+		return fmt.Errorf("angeschlossene Laufwerke konnten nicht geprüft werden: %w", err)
+	}
+	for _, volume := range volumes {
+		if !volume.External || !strings.EqualFold(filepath.Clean(volume.Path), filepath.Clean(path)) {
+			continue
+		}
+		if uuid != "" && volume.UUID != "" && !strings.EqualFold(strings.TrimPrefix(uuid, "volume:"), strings.TrimPrefix(volume.UUID, "volume:")) {
+			return fmt.Errorf("Datenträgeridentität hat sich geändert")
+		}
+		return nil
+	}
+	return fmt.Errorf("SMART ist nur für ein aktuell angeschlossenes externes Laufwerk verfügbar")
+}
+
+func (a *App) CheckDriveHealth(id int64) (storage.HealthReport, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return storage.HealthReport{}, fmt.Errorf("Vault ist nicht bereit")
+	}
+	if !a.scanMu.TryLock() {
+		return storage.HealthReport{}, fmt.Errorf("während eines Scans ist keine SMART-Prüfung möglich")
+	}
+	defer a.scanMu.Unlock()
+	drives, err := a.GetDrives()
+	if err != nil {
+		return storage.HealthReport{}, err
+	}
+	for _, drive := range drives {
+		if drive.ID != id {
+			continue
+		}
+		if !drive.Online {
+			return storage.HealthReport{}, fmt.Errorf("Datenträger ist nicht angeschlossen")
+		}
+		if err := externalHealthPath(drive.Path, drive.UUID); err != nil {
+			return storage.HealthReport{}, err
+		}
+		report := storage.CheckHealth(drive.Path)
+		if err := a.catalog.UpdateDriveHealth(id, report.Status, report.Message, report.Source, report.CheckedAt); err != nil {
+			return storage.HealthReport{}, err
+		}
+		return report, nil
+	}
+	return storage.HealthReport{}, fmt.Errorf("Datenträger wurde nicht gefunden")
+}
+
+func (a *App) StartDriveSelfTest(id int64) (string, error) {
+	if a.initErr != nil || a.catalog == nil {
+		return "", fmt.Errorf("Vault ist nicht bereit")
+	}
+	if !a.scanMu.TryLock() {
+		return "", fmt.Errorf("während eines Scans kann kein Selbsttest gestartet werden")
+	}
+	defer a.scanMu.Unlock()
+	drives, err := a.GetDrives()
+	if err != nil {
+		return "", err
+	}
+	for _, drive := range drives {
+		if drive.ID == id {
+			if !drive.Online {
+				return "", fmt.Errorf("Datenträger ist nicht angeschlossen")
+			}
+			if err := externalHealthPath(drive.Path, drive.UUID); err != nil {
+				return "", err
+			}
+			return storage.StartShortSelfTest(drive.Path)
+		}
+	}
+	return "", fmt.Errorf("Datenträger wurde nicht gefunden")
+}
+
 func (a *App) GetConnectedVolumes() (ConnectedVolumes, error) {
 	settings := a.currentSettings()
 	result := ConnectedVolumes{Enabled: settings.VolumeDetectionEnabled, Volumes: []storage.Volume{}}
@@ -2472,6 +2546,18 @@ func (a *App) scanPathWithIdentity(selected string, detected storage.Identity) (
 	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Vendor: identity.Vendor, Model: identity.Model, Serial: identity.Serial, DeviceType: identity.DeviceType, Archive: settings.ArchiveEnabled, MaxSnapshots: settings.MaxSnapshots}); err != nil {
 		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
+	}
+	if settings.SmartAutoCheckEnabled {
+		if id, idErr := a.catalog.DriveIDForIdentity(identity.UUID, selected); idErr == nil {
+			wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "health", "files": len(report.Files), "path": selected, "profile": profileName})
+			var health storage.HealthReport
+			if healthErr := externalHealthPath(selected, identity.UUID); healthErr == nil {
+				health = storage.CheckHealth(selected)
+			} else {
+				health = storage.HealthReport{Status: "unavailable", Message: healthErr.Error(), Source: "SMART", CheckedAt: time.Now().Format(time.RFC3339)}
+			}
+			_ = a.catalog.UpdateDriveHealth(id, health.Status, health.Message, health.Source, health.CheckedAt)
+		}
 	}
 	diagnostic := ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated}
 	result := ScanResult{Drive: selected, DriveUUID: identity.UUID, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}

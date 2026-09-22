@@ -63,12 +63,16 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if settings.DuplicatePermanentDeleteEnabled {
 		t.Fatal("permanent duplicate deletion must be disabled by default")
 	}
+	if !settings.SmartAutoCheckEnabled {
+		t.Fatal("automatic SMART check should be enabled by default")
+	}
 	settings.MaxSnapshots = 3
+	settings.SmartAutoCheckEnabled = false
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := Load(path)
-	if err != nil || loaded.MaxSnapshots != 3 {
+	if err != nil || loaded.MaxSnapshots != 3 || loaded.SmartAutoCheckEnabled {
 		t.Fatalf("reloaded settings: %+v, %v", loaded, err)
 	}
 }

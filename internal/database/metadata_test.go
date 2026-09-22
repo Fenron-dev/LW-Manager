@@ -50,14 +50,17 @@ func TestDriveMetadataAndTags(t *testing.T) {
 	if drives[0].StatusID != "ok" || drives[0].Note != "Übergabe an Team" || drives[0].ScanProfileID != "profile-media" || !reflect.DeepEqual(drives[0].Tags, []string{"kunde A", "Mobil"}) {
 		t.Fatalf("metadata = note %q, tags %#v", drives[0].Note, drives[0].Tags)
 	}
+	if err := catalog.UpdateDriveHealth(drives[0].ID, "warning", "SMART meldet Fehler", "test", "2026-09-22T10:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
 	profileID, err := catalog.ScanProfileID("test-volume", root)
 	if err != nil || profileID != "profile-media" {
 		t.Fatalf("scan profile = %q, %v", profileID, err)
 	}
 	scanMetadataTestDrive(t, catalog, root, 0, "second.txt")
 	drives, err = catalog.Drives()
-	if err != nil || drives[0].StatusID != "ok" {
-		t.Fatalf("status after rescan = %#v, %v", drives, err)
+	if err != nil || drives[0].StatusID != "ok" || drives[0].HealthStatus != "warning" || drives[0].HealthMessage != "SMART meldet Fehler" {
+		t.Fatalf("status and health after rescan = %#v, %v", drives, err)
 	}
 	profileID, err = catalog.ScanProfileID("volume:test-volume", root)
 	if err != nil || profileID != "profile-media" {

@@ -47,6 +47,10 @@ type Drive struct {
 	DeviceType      string   `json:"deviceType"`
 	StorageLocation string   `json:"storageLocation"`
 	StatusID        string   `json:"statusId"`
+	HealthStatus    string   `json:"healthStatus"`
+	HealthMessage   string   `json:"healthMessage"`
+	HealthSource    string   `json:"healthSource"`
+	HealthCheckedAt string   `json:"healthCheckedAt"`
 	Note            string   `json:"note"`
 	ScanProfileID   string   `json:"scanProfileId"`
 	Tags            []string `json:"tags"`
@@ -710,7 +714,7 @@ func (c *Catalog) DeleteQuarantineRecord(id int64) error {
 
 func (c *Catalog) Drives() ([]Drive, error) {
 	rows, err := c.db.Query(`SELECT d.id,d.label,COALESCE(d.display_name,''),COALESCE(d.inventory_number,''),COALESCE(d.vault_path,''),
-		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.status_id,''),COALESCE(d.note,''),COALESCE(d.scan_profile_id,''),
+		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.status_id,''),COALESCE(d.health_status,''),COALESCE(d.health_message,''),COALESCE(d.health_source,''),COALESCE(d.health_checked_at,''),COALESCE(d.note,''),COALESCE(d.scan_profile_id,''),
 		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN drive_tags dt ON dt.tag_id=t.id WHERE dt.drive_id=d.id ORDER BY t.name COLLATE NOCASE)),''),
 		d.uuid,COALESCE(d.serial,''),COALESCE(d.vendor,''),COALESCE(d.detected_type,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
 		FROM drives d LEFT JOIN files f ON f.drive_id=d.id GROUP BY d.id ORDER BY COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE`)
@@ -722,7 +726,7 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	for rows.Next() {
 		var drive Drive
 		var tags string
-		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.StatusID, &drive.Note, &drive.ScanProfileID, &tags, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
+		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.StatusID, &drive.HealthStatus, &drive.HealthMessage, &drive.HealthSource, &drive.HealthCheckedAt, &drive.Note, &drive.ScanProfileID, &tags, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
 			return nil, err
 		}
 		drive.Tags = splitStoredTags(tags)
@@ -753,6 +757,39 @@ func (c *Catalog) UpdateDrive(id int64, displayName, inventoryNumber, manufactur
 		return err
 	}
 	return tx.Commit()
+}
+
+func (c *Catalog) UpdateDriveHealth(id int64, status, message, source, checkedAt string) error {
+	result, err := c.db.Exec(`UPDATE drives SET health_status=?,health_message=?,health_source=?,health_checked_at=? WHERE id=?`, status, message, source, checkedAt, id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return fmt.Errorf("Datenträger %d wurde nicht gefunden", id)
+	}
+	return nil
+}
+
+func (c *Catalog) DriveIDForIdentity(uuid, path string) (int64, error) {
+	key := strings.TrimSpace(uuid)
+	if key == "" {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return 0, err
+		}
+		key = fmt.Sprintf("path:%x", sha256.Sum256([]byte(filepath.Clean(absolute))))
+	} else {
+		key = "volume:" + strings.ToLower(key)
+	}
+	var id int64
+	if err := c.db.QueryRow("SELECT id FROM drives WHERE uuid=?", key).Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 func (c *Catalog) ScanProfileID(uuid, path string) (string, error) {
@@ -1260,7 +1297,7 @@ func treeStatus(entry *ComparisonTreeEntry) string {
 func (c *Catalog) migrate() error {
 	columns := map[string]string{
 		"display_name": "TEXT", "inventory_number": "TEXT", "manufacturer": "TEXT", "device_type": "TEXT",
-		"storage_location": "TEXT", "status_id": "TEXT NOT NULL DEFAULT 'ok'", "total_size": "INTEGER NOT NULL DEFAULT 0", "used_size": "INTEGER NOT NULL DEFAULT 0",
+		"storage_location": "TEXT", "status_id": "TEXT NOT NULL DEFAULT 'ok'", "health_status": "TEXT NOT NULL DEFAULT ''", "health_message": "TEXT NOT NULL DEFAULT ''", "health_source": "TEXT NOT NULL DEFAULT ''", "health_checked_at": "TEXT NOT NULL DEFAULT ''", "total_size": "INTEGER NOT NULL DEFAULT 0", "used_size": "INTEGER NOT NULL DEFAULT 0",
 		"serial": "TEXT", "vendor": "TEXT", "model": "TEXT", "fs_type": "TEXT",
 		"detected_type": "TEXT", "note": "TEXT", "scan_profile_id": "TEXT NOT NULL DEFAULT ''",
 	}

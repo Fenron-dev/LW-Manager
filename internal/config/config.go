@@ -54,6 +54,7 @@ type Settings struct {
 	ScanExcludedPatterns             []string      `json:"scanExcludedPatterns"`
 	ScanProfiles                     []ScanProfile `json:"scanProfiles"`
 	DriveStatuses                    []DriveStatus `json:"driveStatuses"`
+	SmartAutoCheckEnabled            bool          `json:"smartAutoCheckEnabled"`
 	ImageAnalysisEnabled             bool          `json:"imageAnalysisEnabled"`
 	ImageJPEGEnabled                 bool          `json:"imageJPEGEnabled"`
 	ImagePNGEnabled                  bool          `json:"imagePNGEnabled"`
@@ -135,7 +136,7 @@ type Settings struct {
 func Defaults() Settings {
 	return Settings{
 		Version: 23, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
-		DriveStatuses:          []DriveStatus{{"ok", "OK"}, {"in-pruefung", "In Prüfung"}, {"fehlerhaft", "Fehlerhaft"}, {"defekt", "Defekt"}, {"verliehen", "Verliehen"}, {"vermisst", "Vermisst"}, {"entsorgt", "Entsorgt"}},
+		DriveStatuses:          []DriveStatus{{"ok", "OK"}, {"in-pruefung", "In Prüfung"}, {"fehlerhaft", "Fehlerhaft"}, {"defekt", "Defekt"}, {"verliehen", "Verliehen"}, {"vermisst", "Vermisst"}, {"entsorgt", "Entsorgt"}}, SmartAutoCheckEnabled: true,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{}, ScanProfiles: []ScanProfile{},
 		ImageAnalysisEnabled: true, ImageJPEGEnabled: true, ImagePNGEnabled: true, ImageGIFEnabled: true, ImageHEICEnabled: true,

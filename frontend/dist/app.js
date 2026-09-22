@@ -126,6 +126,7 @@ async function showSettings() {
     renderDriveStatuses();
     $('#vault-location-path').textContent = (await window.go.main.App.GetAppInfo()).vaultRoot;
     $('#setting-volume-detection').checked = settings.volumeDetectionEnabled;
+    $('#setting-smart-auto-check').checked = settings.smartAutoCheckEnabled;
     $('#setting-ai-enabled').checked = settings.aiEnabled;
     $('#setting-ai-provider').value = settings.aiProvider;
     $('#setting-ai-endpoint').value = settings.aiEndpoint;
@@ -466,6 +467,7 @@ async function saveSettings() {
       version: 23,
       driveStatuses: driveStatuses.map((status) => ({id: status.id, name: status.name.trim()})),
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
+      smartAutoCheckEnabled: $('#setting-smart-auto-check').checked,
       aiEnabled: $('#setting-ai-enabled').checked,
       aiProvider: $('#setting-ai-provider').value,
       aiEndpoint: $('#setting-ai-endpoint').value.trim(),
@@ -999,6 +1001,12 @@ async function loadDrives() {
     const source = document.createElement('span');
     source.textContent = [drive.online ? 'Online' : 'Offline', drive.statusId ? `Status: ${statusNames.get(drive.statusId) || drive.statusId}` : '', drive.inventoryNumber ? `Nr. ${drive.inventoryNumber}` : '', drive.label, drive.storageLocation ? `Lager: ${drive.storageLocation}` : ''].filter(Boolean).join(' · ');
     identity.append(heading, source);
+    const health = document.createElement('span');
+    health.className = `drive-health drive-health-${drive.healthStatus || 'unchecked'}`;
+    const healthLabels = {ok: 'Unauffällig', warning: 'Warnung', critical: 'Kritisch', unavailable: 'Nicht verfügbar'};
+    health.textContent = `Gesundheit: ${healthLabels[drive.healthStatus] || 'Noch nicht geprüft'}${drive.healthCheckedAt ? ` · ${formatDate(drive.healthCheckedAt)}` : ''}`;
+    health.title = drive.healthMessage || 'Noch kein SMART-Befund vorhanden';
+    identity.append(health);
     appendTagBadges(identity, drive.tags);
     const kind = document.createElement('span');
     kind.className = 'drive-cell';
@@ -1027,7 +1035,18 @@ async function loadDrives() {
     edit.className = 'secondary compact';
     edit.textContent = 'Bearbeiten';
     edit.addEventListener('click', (event) => { event.stopPropagation(); openDriveDialog(drive); });
-    actions.append(history, edit);
+    const checkHealth = document.createElement('button');
+    checkHealth.className = 'secondary compact';
+    checkHealth.textContent = 'SMART prüfen';
+    checkHealth.disabled = !drive.online;
+    checkHealth.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      checkHealth.disabled = true;
+      try { await window.go.main.App.CheckDriveHealth(drive.id); await loadDrives(); }
+      catch (error) { alert(`SMART-Prüfung: ${error}`); }
+      finally { checkHealth.disabled = false; }
+    });
+    actions.append(history, checkHealth, edit);
     row.append(identity, kind, capacity, files, actions);
     const treePanel = document.createElement('div');
     treePanel.className = 'drive-tree-panel hidden';
@@ -1397,6 +1416,12 @@ async function createDirectoryLevel(driveID, directory, depth, driveLabel) {
 
 async function openDriveDialog(drive) {
 	const settings = await window.go.main.App.GetSettings();
+	const healthPanel = ensureDriveHealthPanel();
+	const healthLabels = {ok: 'Unauffällig', warning: 'Warnung', critical: 'Kritisch', unavailable: 'Nicht verfügbar'};
+	healthPanel.querySelector('.smart-health-value').textContent = `${healthLabels[drive.healthStatus] || 'Noch nicht geprüft'}${drive.healthCheckedAt ? ` · ${formatDate(drive.healthCheckedAt)}` : ''}`;
+	healthPanel.querySelector('.smart-health-message').textContent = drive.healthMessage || 'Noch kein SMART-Befund vorhanden.';
+	healthPanel.querySelector('.smart-check-button').disabled = !drive.online;
+	healthPanel.querySelector('.smart-self-test-button').disabled = !drive.online;
 	const statusSelect = $('#edit-drive-status');
 	statusSelect.replaceChildren(new Option('Nicht festgelegt', ''));
 	(settings.driveStatuses || []).forEach((status) => statusSelect.add(new Option(status.name, status.id)));
@@ -1424,6 +1449,53 @@ async function openDriveDialog(drive) {
   $('#drive-detail-path').textContent = `${drive.label} · ${drive.path}`;
   $('#drive-save-status').textContent = '';
   $('#drive-dialog').showModal();
+}
+
+function ensureDriveHealthPanel() {
+  let panel = $('#drive-health-panel');
+  if (panel) return panel;
+  panel = document.createElement('section');
+  panel.id = 'drive-health-panel';
+  panel.className = 'drive-health-panel';
+  const title = document.createElement('h3');
+  title.textContent = 'SMART-Gesundheit';
+  const value = document.createElement('strong');
+  value.className = 'smart-health-value';
+  const message = document.createElement('p');
+  message.className = 'smart-health-message';
+  const actions = document.createElement('div');
+  actions.className = 'backup-actions';
+  const check = document.createElement('button');
+  check.type = 'button';
+  check.className = 'secondary smart-check-button';
+  check.textContent = 'SMART prüfen';
+  check.addEventListener('click', async () => {
+    check.disabled = true;
+    message.textContent = 'SMART wird gelesen …';
+    try {
+      const report = await window.go.main.App.CheckDriveHealth(Number($('#edit-drive-id').value));
+      const labels = {ok: 'Unauffällig', warning: 'Warnung', critical: 'Kritisch', unavailable: 'Nicht verfügbar'};
+      value.textContent = `${labels[report.status] || report.status} · ${formatDate(report.checkedAt)}`;
+      message.textContent = report.message;
+      await loadDrives();
+    } catch (error) { message.textContent = `SMART-Prüfung fehlgeschlagen: ${error}`; }
+    finally { check.disabled = false; }
+  });
+  const selfTest = document.createElement('button');
+  selfTest.type = 'button';
+  selfTest.className = 'secondary smart-self-test-button';
+  selfTest.textContent = 'Kurz-Selbsttest starten';
+  selfTest.addEventListener('click', async () => {
+    if (!confirm('SMART-Kurztest auf diesem Laufwerk starten? Er läuft im Laufwerk weiter; bitte bis zum Abschluss nicht auswerfen.')) return;
+    selfTest.disabled = true;
+    try { message.textContent = await window.go.main.App.StartDriveSelfTest(Number($('#edit-drive-id').value)); }
+    catch (error) { message.textContent = `Selbsttest nicht gestartet: ${error}`; }
+    finally { selfTest.disabled = false; }
+  });
+  actions.append(check, selfTest);
+  panel.append(title, value, message, actions);
+  $('#drive-dialog .technical-title').before(panel);
+  return panel;
 }
 
 function ensureDriveProfileSelect() {
@@ -1955,7 +2027,7 @@ async function setDuplicatePreference(group, file) {
 }
 
 window.runtime.EventsOn('scan:progress', (event) => {
-  $('#scan-title').textContent = event.phase === 'prepare' ? `Scanprofil: ${event.profile || 'Globale Einstellungen'}` : event.phase === 'save' ? 'Katalog wird gespeichert …' : `${event.files.toLocaleString('de-DE')} Dateien gefunden`;
+  $('#scan-title').textContent = event.phase === 'prepare' ? `Scanprofil: ${event.profile || 'Globale Einstellungen'}` : event.phase === 'save' ? 'Katalog wird gespeichert …' : event.phase === 'health' ? 'SMART-Gesundheit wird geprüft …' : `${event.files.toLocaleString('de-DE')} Dateien gefunden`;
   $('#scan-detail').textContent = event.phase === 'prepare' ? event.path : `${event.path}${event.profile ? ` · Profil: ${event.profile}` : ''}`;
 });
 window.runtime.EventsOn('duplicates:progress', (event) => {
