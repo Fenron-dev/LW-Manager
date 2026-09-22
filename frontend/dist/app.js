@@ -818,7 +818,10 @@ async function runScan(scanAction, preparingMessage) {
       $('#scan-report-button').classList.toggle('hidden', !result.logPath && !result.issues?.length);
       extensionsLoaded = false;
       const [, drives] = await Promise.all([loadInfo(), loadDrives()]);
-      const drive = drives.find((item) => sameVolume(item, {uuid: result.driveUUID, path: result.drive}));
+      const scannedUUID = String(result.driveUUID || '').toLowerCase().replace(/^volume:/, '');
+      const drive = scannedUUID
+        ? drives.find((item) => String(item.uuid || '').toLowerCase().replace(/^volume:/, '') === scannedUUID)
+        : drives.find((item) => String(item.path || '').replace(/[\\/]+$/, '').toLowerCase() === String(result.drive || '').replace(/[\\/]+$/, '').toLowerCase());
       if (drive) {
         try { await openDriveDialog(drive); }
         catch (error) { $('#scan-detail').textContent += ` · Bearbeitung konnte nicht geöffnet werden: ${error}`; }
