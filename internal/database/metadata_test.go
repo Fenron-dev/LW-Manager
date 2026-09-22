@@ -385,7 +385,7 @@ func TestExportComparisonStreamsFilteredEntriesAndSnapshotMetadata(t *testing.T)
 	if err != nil || len(drives) != 1 {
 		t.Fatalf("drives = %#v, %v", drives, err)
 	}
-	if err := catalog.UpdateDrive(drives[0].ID, "Archivmedium", "", "", "", "", "", "", "", "", nil); err != nil {
+	if err := catalog.UpdateDrive(drives[0].ID, "Archivmedium", "", "", "", "", "", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	snapshots, err := catalog.Snapshots(drives[0].ID)
