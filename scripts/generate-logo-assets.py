@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate VaultApp logo variants from the transparent ImageGen master."""
+"""Generate LW-Manager logo variants from the transparent ImageGen master."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ BRAND = ROOT / "assets" / "brand"
 ICONS = ROOT / "assets" / "icons"
 WEB = ROOT / "frontend" / "dist" / "assets"
 BUILD = ROOT / "build"
-SOURCE = BRAND / "vaultapp-mark-master.png"
+SOURCE = BRAND / "lw-manager-mark-source.png"
 
 NAVY = (13, 18, 28, 255)
 TEAL = (85, 214, 190, 255)
@@ -63,9 +63,9 @@ def font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 def save_wordmark(master: Image.Image, path: Path, color: tuple[int, int, int, int]) -> None:
-    canvas = Image.new("RGBA", (1600, 420))
+    canvas = Image.new("RGBA", (1900, 420))
     canvas.alpha_composite(master.resize((330, 330), Image.Resampling.LANCZOS), (45, 45))
-    ImageDraw.Draw(canvas).text((405, 105), "VaultApp", font=font(184), fill=color, anchor="la")
+    ImageDraw.Draw(canvas).text((405, 105), "LW-Manager", font=font(184), fill=color, anchor="la")
     canvas.save(path, "PNG", optimize=True)
 
 
@@ -74,28 +74,28 @@ def generate() -> None:
         directory.mkdir(parents=True, exist_ok=True)
 
     master = prepare_master()
-    master.save(SOURCE, "PNG", optimize=True)
+    master.save(BRAND / "lw-manager-mark-master.png", "PNG", optimize=True)
     for size in (1024, 512, 256, 180, 128, 64, 48, 32, 24, 16):
-        save_png(master, BRAND / f"vaultapp-mark-{size}.png", size)
+        save_png(master, BRAND / f"lw-manager-mark-{size}.png", size)
 
-    save_wordmark(master, BRAND / "vaultapp-logo-dark.png", WHITE)
-    save_wordmark(master, BRAND / "vaultapp-logo-light.png", NAVY)
+    save_wordmark(master, BRAND / "lw-manager-logo-dark.png", WHITE)
+    save_wordmark(master, BRAND / "lw-manager-logo-light.png", NAVY)
     navy_tile = Image.new("RGBA", (1024, 1024), NAVY)
     navy_tile.alpha_composite(master)
-    navy_tile.save(BRAND / "vaultapp-mark-on-navy.png", "PNG", optimize=True)
+    navy_tile.save(BRAND / "lw-manager-mark-on-navy.png", "PNG", optimize=True)
 
-    shutil.copy2(BRAND / "vaultapp-mark-1024.png", BUILD / "appicon.png")
-    shutil.copy2(BRAND / "vaultapp-mark-64.png", WEB / "vaultapp-mark-64.png")
-    shutil.copy2(BRAND / "vaultapp-mark-32.png", WEB / "favicon-32.png")
-    shutil.copy2(BRAND / "vaultapp-mark-180.png", WEB / "apple-touch-icon.png")
+    shutil.copy2(BRAND / "lw-manager-mark-1024.png", BUILD / "appicon.png")
+    shutil.copy2(BRAND / "lw-manager-mark-64.png", WEB / "lw-manager-mark-64.png")
+    shutil.copy2(BRAND / "lw-manager-mark-32.png", WEB / "favicon-32.png")
+    shutil.copy2(BRAND / "lw-manager-mark-180.png", WEB / "apple-touch-icon.png")
 
     ico_sizes = [(size, size) for size in (16, 24, 32, 48, 64, 128, 256)]
     windows_icon = BUILD / "windows" / "icon.ico"
     master.save(windows_icon, "ICO", sizes=ico_sizes)
     (ICONS / "windows").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(windows_icon, ICONS / "windows" / "VaultApp.ico")
+    shutil.copy2(windows_icon, ICONS / "windows" / "LW-Manager.ico")
 
-    iconset = ICONS / "macos" / "VaultApp.iconset"
+    iconset = ICONS / "macos" / "LW-Manager.iconset"
     for filename, size in {
         "icon_16x16.png": 16,
         "icon_16x16@2x.png": 32,
@@ -109,14 +109,14 @@ def generate() -> None:
         "icon_512x512@2x.png": 1024,
     }.items():
         save_png(master, iconset / filename, size)
-    icns = ICONS / "macos" / "VaultApp.icns"
+    icns = ICONS / "macos" / "LW-Manager.icns"
     master.save(icns, "ICNS")
-    shutil.copy2(icns, BUILD / "darwin" / "VaultApp.icns")
+    shutil.copy2(icns, BUILD / "darwin" / "LW-Manager.icns")
 
     for size in (16, 24, 32, 48, 64, 128, 256, 512):
-        save_png(master, ICONS / "linux" / "hicolor" / f"{size}x{size}" / "apps" / "vaultapp.png", size)
+        save_png(master, ICONS / "linux" / "hicolor" / f"{size}x{size}" / "apps" / "lw-manager.png", size)
 
-    print("Generated VaultApp logo assets.")
+    print("Generated LW-Manager logo assets.")
 
 
 if __name__ == "__main__":

@@ -787,6 +787,17 @@ async function startVolumeScan(volume) {
   return runScan(() => window.go.main.App.ScanVolume(volume.path), `${volume.label || volume.path} wird vorbereitet.`);
 }
 
+async function ejectVolume(volume, buttons) {
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    await window.go.main.App.EjectVolume(volume.path, volume.uuid || '');
+    await loadDrives();
+  } catch (error) {
+    alert(`Datenträger konnte nicht ausgeworfen werden: ${error}`);
+    buttons.forEach((button) => { button.disabled = false; });
+  }
+}
+
 function renderFiles(files) {
   const container = $('#file-results');
   container.replaceChildren();
@@ -993,7 +1004,7 @@ async function loadDrives() {
 function sameVolume(drive, volume) {
   const driveUUID = String(drive.uuid || '').toLowerCase().replace(/^volume:/, '');
   const volumeUUID = String(volume.uuid || '').toLowerCase().replace(/^volume:/, '');
-  if (driveUUID && volumeUUID && driveUUID === volumeUUID) return true;
+  if (driveUUID && volumeUUID) return driveUUID === volumeUUID;
   return String(drive.path || '').replace(/[\\/]+$/, '').toLowerCase() === String(volume.path || '').replace(/[\\/]+$/, '').toLowerCase();
 }
 
@@ -1040,7 +1051,15 @@ async function loadConnectedVolumes(drives = []) {
       scan.className = 'compact';
       scan.textContent = known ? 'Neu scannen' : 'Scannen';
       scan.addEventListener('click', () => startVolumeScan(volume));
-      row.append(identity, capacity, state, scan);
+      const eject = document.createElement('button');
+      eject.className = 'compact secondary';
+      eject.textContent = 'Auswerfen';
+      eject.title = `${volume.label || volume.path} sicher auswerfen`;
+      eject.addEventListener('click', () => ejectVolume(volume, [scan, eject]));
+      const actions = document.createElement('div');
+      actions.className = 'connected-volume-actions';
+      actions.append(scan, eject);
+      row.append(identity, capacity, state, actions);
       list.append(row);
     }
   } catch (error) {

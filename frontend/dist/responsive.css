@@ -289,6 +289,11 @@ main > *,
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
+  .connected-volume-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
   .connected-volume-row .drive-capacity {
     display: none;
   }

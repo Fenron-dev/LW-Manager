@@ -1,10 +1,10 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "VaultApp",
-  "outputfilename": "VaultApp",
+  "name": "LW-Manager",
+  "outputfilename": "LW-Manager",
   "frontend:dir": "frontend",
   "frontend:install": "",
   "frontend:build": "",
-  "author": {"name": "VaultApp Contributors"},
-  "info": {"productName": "VaultApp", "productVersion": "0.1.0", "copyright": "Copyright 2026"}
+  "author": {"name": "LW-Manager Contributors"},
+  "info": {"productName": "LW-Manager", "productVersion": "1.0.5", "copyright": "Copyright 2026"}
 }

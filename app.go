@@ -34,7 +34,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.0.4-dev"
+var appVersion = "1.0.5-dev"
 
 type App struct {
 	ctx        context.Context
@@ -258,8 +258,8 @@ func (a *App) ExportLibraryCSV(query, extension, tag string, driveID int64, incl
 		return ExportResult{}, fmt.Errorf("Katalogexport ist in den Einstellungen deaktiviert")
 	}
 	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
-		Title:           "Gefilterten VaultApp-Katalog exportieren",
-		DefaultFilename: "VaultApp-Katalog-" + time.Now().Format("2006-01-02") + ".csv",
+		Title:           "Gefilterten LW-Manager-Katalog exportieren",
+		DefaultFilename: "LW-Manager-Katalog-" + time.Now().Format("2006-01-02") + ".csv",
 		Filters:         []wailsruntime.FileFilter{{DisplayName: "CSV-Tabelle", Pattern: "*.csv"}},
 	})
 	if err != nil {
@@ -395,8 +395,8 @@ func (a *App) ExportLibraryJSON(query, extension, tag string, driveID int64, inc
 		return ExportResult{}, fmt.Errorf("JSON-Katalogexport ist in den Einstellungen deaktiviert")
 	}
 	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
-		Title:           "Gefilterten VaultApp-Katalog als JSON exportieren",
-		DefaultFilename: "VaultApp-Katalog-" + time.Now().Format("2006-01-02") + ".json",
+		Title:           "Gefilterten LW-Manager-Katalog als JSON exportieren",
+		DefaultFilename: "LW-Manager-Katalog-" + time.Now().Format("2006-01-02") + ".json",
 		Filters:         []wailsruntime.FileFilter{{DisplayName: "JSON-Daten", Pattern: "*.json"}},
 	})
 	if err != nil {
@@ -663,6 +663,56 @@ func (a *App) GetConnectedVolumes() (ConnectedVolumes, error) {
 	}
 	result.Volumes = volumes
 	return result, nil
+}
+
+func matchingEjectVolume(path, uuid string, volumes []storage.Volume) (storage.Volume, error) {
+	requested := filepath.Clean(path)
+	for _, volume := range volumes {
+		candidate := filepath.Clean(volume.Path)
+		pathMatches := requested == candidate || (goruntime.GOOS == "windows" && strings.EqualFold(requested, candidate))
+		if !volume.External || !pathMatches {
+			continue
+		}
+		if uuid != volume.UUID {
+			return storage.Volume{}, fmt.Errorf("Datenträgeridentität hat sich geändert; bitte die Liste aktualisieren")
+		}
+		return volume, nil
+	}
+	return storage.Volume{}, fmt.Errorf("Datenträger ist nicht mehr angeschlossen oder wurde nicht erkannt")
+}
+
+// EjectVolume safely unmounts only an external volume still reported by the OS.
+// The UUID prevents a stale button from ejecting a different disk that inherited
+// the same Windows drive letter (or Unix mount path).
+func (a *App) EjectVolume(path, uuid string) error {
+	if !a.currentSettings().VolumeDetectionEnabled {
+		return fmt.Errorf("automatische Datenträgererkennung ist deaktiviert")
+	}
+	if !a.scanMu.TryLock() {
+		return fmt.Errorf("während eines Scans kann kein Datenträger ausgeworfen werden")
+	}
+	defer a.scanMu.Unlock()
+	volumes, err := storage.ListVolumes()
+	if err != nil {
+		return fmt.Errorf("angeschlossene Datenträger erkennen: %w", err)
+	}
+	volume, err := matchingEjectVolume(path, uuid, volumes)
+	if err != nil {
+		return err
+	}
+	candidate := filepath.Clean(volume.Path)
+	root := filepath.Clean(a.root)
+	if goruntime.GOOS == "windows" {
+		if strings.HasPrefix(strings.ToLower(root), strings.ToLower(candidate)) {
+			return fmt.Errorf("der Datenträger enthält den laufenden LW-Manager und kann hier nicht ausgeworfen werden")
+		}
+	} else if relative, relErr := filepath.Rel(candidate, root); relErr == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("der Datenträger enthält den laufenden LW-Manager und kann hier nicht ausgeworfen werden")
+	}
+	if err := storage.Eject(candidate); err != nil {
+		return fmt.Errorf("Datenträger auswerfen: %w", err)
+	}
+	return nil
 }
 
 func (a *App) FindDuplicates() (DuplicateResult, error) {
@@ -1566,9 +1616,9 @@ func (a *App) CreateBackup() (BackupResult, error) {
 		return BackupResult{}, fmt.Errorf("Datensicherungen sind in den Einstellungen deaktiviert")
 	}
 	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
-		Title:            "VaultApp-Datensicherung speichern",
+		Title:            "LW-Manager-Datensicherung speichern",
 		DefaultDirectory: a.root,
-		DefaultFilename:  fmt.Sprintf("VaultApp-Backup-%s.zip", time.Now().Format("2006-01-02_15-04")),
+		DefaultFilename:  fmt.Sprintf("LW-Manager-Backup-%s.zip", time.Now().Format("2006-01-02_15-04")),
 		Filters:          []wailsruntime.FileFilter{{DisplayName: "ZIP-Archiv", Pattern: "*.zip"}},
 	})
 	if err != nil {
@@ -1618,9 +1668,9 @@ func managedBackupKind(name string) (string, bool) {
 		return "", false
 	}
 	switch {
-	case strings.HasPrefix(lower, "vaultapp-backup-"):
+	case strings.HasPrefix(lower, "vaultapp-backup-"), strings.HasPrefix(lower, "lw-manager-backup-"):
 		return "Backup", true
-	case strings.HasPrefix(lower, "vaultapp-rollback-"):
+	case strings.HasPrefix(lower, "vaultapp-rollback-"), strings.HasPrefix(lower, "lw-manager-rollback-"):
 		return "Rückfallsicherung", true
 	default:
 		return "", false
@@ -1640,7 +1690,7 @@ func (a *App) DeleteManagedBackup(path string) error {
 		return fmt.Errorf("nur Sicherungen direkt im Vault-Ordner dürfen gelöscht werden")
 	}
 	if _, ok := managedBackupKind(filepath.Base(absolute)); !ok {
-		return fmt.Errorf("Datei ist keine verwaltete VaultApp-Sicherung")
+		return fmt.Errorf("Datei ist keine verwaltete LW-Manager-Sicherung")
 	}
 	info, err := os.Lstat(absolute)
 	if err != nil {
@@ -1712,7 +1762,7 @@ func (a *App) SelectBackupForRestore() (BackupInspection, error) {
 	if !a.currentSettings().BackupEnabled {
 		return BackupInspection{}, fmt.Errorf("Datensicherungen sind in den Einstellungen deaktiviert")
 	}
-	selected, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{Title: "VaultApp-Datensicherung prüfen", Filters: []wailsruntime.FileFilter{{DisplayName: "ZIP-Archiv", Pattern: "*.zip"}}})
+	selected, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{Title: "LW-Manager-Datensicherung prüfen", Filters: []wailsruntime.FileFilter{{DisplayName: "ZIP-Archiv", Pattern: "*.zip"}}})
 	if err != nil {
 		return BackupInspection{}, err
 	}
@@ -1833,7 +1883,7 @@ func (a *App) RestoreBackup(source string) (RestoreResult, error) {
 	if err != nil {
 		return RestoreResult{}, err
 	}
-	rollbackPath := filepath.Join(a.root, fmt.Sprintf("VaultApp-Rollback-%s.zip", time.Now().Format("2006-01-02_15-04-05.000000000")))
+	rollbackPath := filepath.Join(a.root, fmt.Sprintf("LW-Manager-Rollback-%s.zip", time.Now().Format("2006-01-02_15-04-05.000000000")))
 	if _, err := a.createBackupAt(rollbackPath, true, backupLimits(settings)); err != nil {
 		return RestoreResult{}, fmt.Errorf("Rückfallsicherung konnte nicht erstellt werden: %w", err)
 	}
@@ -1994,7 +2044,7 @@ func (a *App) ExportSnapshotComparisonJSON(snapshotID int64, status, query strin
 	}
 	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
 		Title:           "Archivvergleich als JSON exportieren",
-		DefaultFilename: "VaultApp-Archivvergleich-" + time.Now().Format("2006-01-02") + ".json",
+		DefaultFilename: "LW-Manager-Archivvergleich-" + time.Now().Format("2006-01-02") + ".json",
 		Filters:         []wailsruntime.FileFilter{{DisplayName: "JSON-Bericht", Pattern: "*.json"}},
 	})
 	if err != nil {
@@ -2078,12 +2128,12 @@ func formatReportBytes(size int64) string {
 func writeComparisonHTML(writer io.Writer, header comparisonPrintHeader, export func(func(database.ComparisonEntry) error) (int, error)) (int, error) {
 	escape := html.EscapeString
 	statusLabels := map[string]string{"": "Alle Status", "added": "Neu", "removed": "Entfernt", "modified": "Geändert", "unchanged": "Unverändert"}
-	intro := `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>VaultApp Archivvergleich</title><style>
+	intro := `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>LW-Manager Archivvergleich</title><style>
 @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#17202a;background:#fff;font:12px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}h1{margin:0 0 4px;font-size:24px}h2{margin:24px 0 8px;font-size:16px}.meta{color:#52606d}.facts,.counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0}.card{padding:10px;border:1px solid #ccd5df;border-radius:7px}.card strong,.card span{display:block}.card span{color:#52606d;font-size:10px}.counts .added{background:#ddf7ed}.counts .removed{background:#fde5e7}.counts .modified{background:#fff2c7}.counts .unchanged{background:#e9eef4}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:7px 8px;border:1px solid #cfd8e3;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#e8eef5}.path{width:31%}.status{width:10%;font-weight:700}.side{width:29.5%}tr.added{background:#e5f8f1}tr.removed{background:#fdebed}tr.modified{background:#fff5d7}tr.unchanged{background:#f1f4f7}.detail{display:block;color:#52606d;font-size:10px}footer{margin-top:14px;color:#687786;font-size:10px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead{display:table-header-group}tr{break-inside:avoid}}</style></head><body>`
 	if _, err := io.WriteString(writer, intro); err != nil {
 		return 0, err
 	}
-	title := fmt.Sprintf(`<header><h1>VaultApp Archivvergleich</h1><div class="meta">Erstellt: %s</div></header><section class="facts"><div class="card"><strong>%s</strong><span>Datenträger</span></div><div class="card"><strong>%s</strong><span>Archivstand</span></div><div class="card"><strong>%s</strong><span>Statusfilter</span></div><div class="card"><strong>%s</strong><span>Pfadfilter</span></div></section>`,
+	title := fmt.Sprintf(`<header><h1>LW-Manager Archivvergleich</h1><div class="meta">Erstellt: %s</div></header><section class="facts"><div class="card"><strong>%s</strong><span>Datenträger</span></div><div class="card"><strong>%s</strong><span>Archivstand</span></div><div class="card"><strong>%s</strong><span>Statusfilter</span></div><div class="card"><strong>%s</strong><span>Pfadfilter</span></div></section>`,
 		escape(header.ExportedAt), escape(header.Snapshot.DriveName), escape(header.Snapshot.CapturedAt), escape(statusLabels[header.Status]), escape(defaultReportValue(header.Query, "Keiner")))
 	if _, err := io.WriteString(writer, title); err != nil {
 		return 0, err
@@ -2117,7 +2167,7 @@ func writeComparisonHTML(writer io.Writer, header comparisonPrintHeader, export 
 	if count != written {
 		return written, fmt.Errorf("Archivvergleich lieferte eine inkonsistente Eintragszahl")
 	}
-	_, err = io.WriteString(writer, `</tbody></table><footer>Erzeugt mit VaultApp. Dieser Bericht enthält ausschließlich Katalogmetadaten, keine Originaldateien.</footer></body></html>`)
+	_, err = io.WriteString(writer, `</tbody></table><footer>Erzeugt mit LW-Manager. Dieser Bericht enthält ausschließlich Katalogmetadaten, keine Originaldateien.</footer></body></html>`)
 	return written, err
 }
 
@@ -2146,7 +2196,7 @@ func (a *App) ExportSnapshotComparisonHTML(snapshotID int64, status, query strin
 	if err != nil {
 		return ExportResult{}, fmt.Errorf("Vergleich zusammenfassen: %w", err)
 	}
-	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{Title: "Druckbaren Archivvergleich exportieren", DefaultFilename: "VaultApp-Archivvergleich-" + time.Now().Format("2006-01-02") + ".html", Filters: []wailsruntime.FileFilter{{DisplayName: "Druckbare HTML-Datei", Pattern: "*.html"}}})
+	destination, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{Title: "Druckbaren Archivvergleich exportieren", DefaultFilename: "LW-Manager-Archivvergleich-" + time.Now().Format("2006-01-02") + ".html", Filters: []wailsruntime.FileFilter{{DisplayName: "Druckbare HTML-Datei", Pattern: "*.html"}}})
 	if err != nil {
 		return ExportResult{}, err
 	}

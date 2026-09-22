@@ -15,7 +15,7 @@ var assets embed.FS
 func main() {
 	app := NewApp()
 	if err := wails.Run(&options.App{
-		Title:            "VaultApp",
+		Title:            "LW-Manager",
 		Width:            1180,
 		Height:           760,
 		MinWidth:         860,

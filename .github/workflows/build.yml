@@ -41,7 +41,7 @@ jobs:
           fi
           gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "VaultApp $tag" --generate-notes --verify-tag
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "LW-Manager $tag" --generate-notes --verify-tag
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
@@ -53,16 +53,16 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact: VaultApp-windows-x64
+            artifact: LW-Manager-windows-x64
             args: -platform windows/amd64
           - os: macos-15-intel
-            artifact: VaultApp-macos-intel
+            artifact: LW-Manager-macos-intel
             args: -platform darwin/amd64
           - os: macos-15
-            artifact: VaultApp-macos-arm64
+            artifact: LW-Manager-macos-arm64
             args: -platform darwin/arm64
           - os: ubuntu-24.04
-            artifact: VaultApp-linux-x64
+            artifact: LW-Manager-linux-x64
             args: -platform linux/amd64 -tags webkit2_41
     runs-on: ${{ matrix.os }}
     steps:
@@ -101,8 +101,8 @@ jobs:
           cp -R build/bin/* package/
           cp README.md package/
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            cp scripts/macos-start.command package/VaultApp-starten.command
-            chmod +x package/VaultApp-starten.command
+            cp scripts/macos-start.command package/LW-Manager-starten.command
+            chmod +x package/LW-Manager-starten.command
           fi
       - name: Package and verify Windows release archive
         if: needs.prepare_release.result == 'success' && runner.os == 'Windows'
@@ -126,8 +126,8 @@ jobs:
             if ($entries -notcontains '.vaultapp') {
               throw 'Windows release ZIP does not contain the portable .vaultapp marker.'
             }
-            if ($entries -notcontains 'VaultApp.exe') {
-              throw 'Windows release ZIP does not contain VaultApp.exe.'
+            if ($entries -notcontains 'LW-Manager.exe') {
+              throw 'Windows release ZIP does not contain LW-Manager.exe.'
             }
           } finally {
             $zip.Dispose()
@@ -166,11 +166,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare_release.outputs.tag }}
-        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'VaultApp-*' --dir release
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'LW-Manager-*' --dir release
       - name: Create and upload checksums
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare_release.outputs.tag }}
         run: |
-          (cd release && sha256sum VaultApp-* > SHA256SUMS.txt)
+          (cd release && sha256sum LW-Manager-* > SHA256SUMS.txt)
           gh release upload "$RELEASE_TAG" release/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
