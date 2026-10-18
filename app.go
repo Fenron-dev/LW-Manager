@@ -448,14 +448,14 @@ type catalogJSONHeader struct {
 	Version    int    `json:"version"`
 	ExportedAt string `json:"exportedAt"`
 	Filters    struct {
-		Query          string `json:"query"`
-		Extension      string `json:"extension"`
-		Tag            string `json:"tag"`
-		DriveID        int64  `json:"driveId"`
+		Query            string  `json:"query"`
+		Extension        string  `json:"extension"`
+		Tag              string  `json:"tag"`
+		DriveID          int64   `json:"driveId"`
 		ExcludedDriveIDs []int64 `json:"excludedDriveIds"`
-		IncludeContent bool   `json:"includeContent"`
-		Sort           string `json:"sort"`
-		Direction      string `json:"direction"`
+		IncludeContent   bool    `json:"includeContent"`
+		Sort             string  `json:"sort"`
+		Direction        string  `json:"direction"`
 	} `json:"filters"`
 }
 

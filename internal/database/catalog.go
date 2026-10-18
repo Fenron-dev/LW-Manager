@@ -127,10 +127,10 @@ type SearchResult struct {
 
 type SearchOptions struct {
 	Query, Extension, Tag string
-	DriveID                int64
-	ExcludedDriveIDs       []int64
-	IncludeContent         bool
-	Sort, Direction        string
+	DriveID               int64
+	ExcludedDriveIDs      []int64
+	IncludeContent        bool
+	Sort, Direction       string
 }
 
 type ExportFile struct {
