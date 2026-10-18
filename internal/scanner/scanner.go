@@ -153,7 +153,7 @@ func Scan(ctx context.Context, sourceRoot, excludedRoot string, imageOptions Ima
 		width, height := imageDimensions(path, extension, imageOptions, &imageBytesRead)
 		metadata := imageEXIF(path, extension, exifOptions, &exifBytesRead)
 		textContent := textPreview(path, extension, textOptions, &textBytesRead, &textBytesStored)
-		report.Files = append(report.Files, File{Path: filepath.ToSlash(relative), Filename: entry.Name(), Extension: strings.TrimPrefix(extension, "."), Size: info.Size(), MIMEType: mediaType, Metadata: metadata, TextContent: textContent, Width: width, Height: height, Modified: info.ModTime()})
+		report.Files = append(report.Files, File{Path: filepath.ToSlash(relative), Filename: entry.Name(), Extension: strings.TrimPrefix(extension, "."), Size: info.Size(), MIMEType: mediaType, Metadata: metadata, TextContent: textContent, Width: width, Height: height, CreatedAt: fileCreatedAt(info), Modified: info.ModTime()})
 		report.Bytes += info.Size()
 		if progress != nil {
 			progress(len(report.Files), relative)

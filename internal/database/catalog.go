@@ -63,6 +63,7 @@ type Drive struct {
 	TotalSize       int64    `json:"totalSize"`
 	UsedSize        int64    `json:"usedSize"`
 	FileCount       int64    `json:"fileCount"`
+	CreatedAt       string   `json:"createdAt"`
 	UpdatedAt       string   `json:"updatedAt"`
 	Online          bool     `json:"online"`
 }
@@ -79,6 +80,7 @@ type FileResult struct {
 	Height       int      `json:"height"`
 	Metadata     string   `json:"metadata"`
 	MatchSnippet string   `json:"matchSnippet"`
+	Created      string   `json:"created"`
 	Modified     string   `json:"modified"`
 	AISummary    string   `json:"aiSummary"`
 	AITags       []string `json:"aiTags"`
@@ -123,6 +125,14 @@ type SearchResult struct {
 	Total      int64        `json:"total"`
 }
 
+type SearchOptions struct {
+	Query, Extension, Tag string
+	DriveID                int64
+	ExcludedDriveIDs       []int64
+	IncludeContent         bool
+	Sort, Direction        string
+}
+
 type ExportFile struct {
 	Filename  string   `json:"filename"`
 	Drive     string   `json:"drive"`
@@ -130,6 +140,7 @@ type ExportFile struct {
 	Extension string   `json:"extension"`
 	MIMEType  string   `json:"mimeType"`
 	Size      int64    `json:"size"`
+	Created   string   `json:"created"`
 	Modified  string   `json:"modified"`
 	Tags      []string `json:"tags"`
 	AITags    []string `json:"aiTags"`
@@ -217,6 +228,7 @@ type ArchivedFile struct {
 	Path      string `json:"path"`
 	Extension string `json:"extension"`
 	MIMEType  string `json:"mimeType"`
+	Created   string `json:"created"`
 	Modified  string `json:"modified"`
 	Size      int64  `json:"size"`
 }
@@ -360,21 +372,26 @@ func (c *Catalog) StoredTextBytesExcludingDrive(uuid, root string) (int64, error
 }
 
 func (c *Catalog) Search(query, extension, tag string, driveID int64, includeContent bool, limit, offset int) (SearchResult, error) {
+	return c.SearchAdvanced(SearchOptions{Query: query, Extension: extension, Tag: tag, DriveID: driveID, IncludeContent: includeContent}, limit, offset)
+}
+
+func (c *Catalog) SearchAdvanced(options SearchOptions, limit, offset int) (SearchResult, error) {
 	if limit < 1 || limit > 100 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	where, args, query := searchFilter(query, extension, tag, driveID, includeContent)
+	where, args, query := searchFilterAdvanced(options)
+	order := fileSearchOrder(options.Sort, options.Direction)
 	result := SearchResult{Extensions: make([]string, 0)}
 	if err := c.db.QueryRow("SELECT COUNT(*) FROM files f WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	selectArgs := []any{query, includeContent, query, query}
+	selectArgs := []any{query, options.IncludeContent, query, query}
 	rows, err := c.db.Query(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),
 		CASE WHEN ?<>'' AND ?=1 AND instr(LOWER(COALESCE(f.text_content,'')),LOWER(?))>0 THEN substr(f.text_content,MAX(instr(LOWER(f.text_content),LOWER(?))-80,1),240) ELSE '' END,
-		COALESCE(f.modified_at,'') FROM files f JOIN drives d ON d.id=f.drive_id WHERE `+where+` ORDER BY f.filename COLLATE NOCASE,f.path LIMIT ? OFFSET ?`, append(append(selectArgs, args...), limit, offset)...)
+		COALESCE(f.created_at,''),COALESCE(f.modified_at,'') FROM files f JOIN drives d ON d.id=f.drive_id WHERE `+where+` ORDER BY `+order+` LIMIT ? OFFSET ?`, append(append(selectArgs, args...), limit, offset)...)
 	if err != nil {
 		return result, err
 	}
@@ -382,7 +399,7 @@ func (c *Catalog) Search(query, extension, tag string, driveID int64, includeCon
 	result.Files = make([]FileResult, 0, limit)
 	for rows.Next() {
 		var file FileResult
-		if err := rows.Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.MatchSnippet, &file.Modified); err != nil {
+		if err := rows.Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.MatchSnippet, &file.Created, &file.Modified); err != nil {
 			return result, err
 		}
 		result.Files = append(result.Files, file)
@@ -390,7 +407,7 @@ func (c *Catalog) Search(query, extension, tag string, driveID int64, includeCon
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
-	extensionRows, err := c.db.Query(`SELECT extension FROM files WHERE extension IS NOT NULL AND extension <> '' GROUP BY extension ORDER BY extension COLLATE NOCASE LIMIT 250`)
+	extensionRows, err := c.db.Query(`SELECT extension FROM files WHERE extension IS NOT NULL AND extension <> '' GROUP BY extension ORDER BY extension COLLATE NOCASE`)
 	if err != nil {
 		return result, err
 	}
@@ -405,7 +422,25 @@ func (c *Catalog) Search(query, extension, tag string, driveID int64, includeCon
 	return result, extensionRows.Err()
 }
 
+func fileSearchOrder(sortName, direction string) string {
+	columns := map[string]string{"name": "f.filename COLLATE NOCASE", "created": "f.created_at", "modified": "f.modified_at", "size": "f.size", "type": "f.extension COLLATE NOCASE", "drive": "COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE", "path": "f.path COLLATE NOCASE"}
+	column := columns[strings.ToLower(strings.TrimSpace(sortName))]
+	if column == "" {
+		column = columns["name"]
+	}
+	direction = strings.ToUpper(strings.TrimSpace(direction))
+	if direction != "DESC" {
+		direction = "ASC"
+	}
+	return column + " " + direction + ",f.path COLLATE NOCASE ASC"
+}
+
 func searchFilter(query, extension, tag string, driveID int64, includeContent bool) (string, []any, string) {
+	return searchFilterAdvanced(SearchOptions{Query: query, Extension: extension, Tag: tag, DriveID: driveID, IncludeContent: includeContent})
+}
+
+func searchFilterAdvanced(options SearchOptions) (string, []any, string) {
+	query, extension, tag, driveID, includeContent := options.Query, options.Extension, options.Tag, options.DriveID, options.IncludeContent
 	query = strings.TrimSpace(query)
 	pattern := "%" + escapeLike(query) + "%"
 	extension = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(extension)), ".")
@@ -416,16 +451,33 @@ func searchFilter(query, extension, tag string, driveID int64, includeContent bo
 		EXISTS(SELECT 1 FROM drive_tags dt JOIN tags t ON t.id=dt.tag_id WHERE dt.drive_id=f.drive_id AND t.name=? COLLATE NOCASE) OR
 		EXISTS(SELECT 1 FROM file_tags ft JOIN tags t ON t.id=ft.tag_id WHERE ft.drive_id=f.drive_id AND ft.path=f.path AND t.name=? COLLATE NOCASE))`
 	args := []any{pattern, pattern, query, includeContent, pattern, query, includeContent, pattern, pattern, extension, extension, driveID, driveID, tag, tag, tag}
+	if len(options.ExcludedDriveIDs) > 0 {
+		placeholders := make([]string, 0, len(options.ExcludedDriveIDs))
+		for _, id := range options.ExcludedDriveIDs {
+			if id <= 0 {
+				continue
+			}
+			placeholders = append(placeholders, "?")
+			args = append(args, id)
+		}
+		if len(placeholders) > 0 {
+			where += " AND f.drive_id NOT IN (" + strings.Join(placeholders, ",") + ")"
+		}
+	}
 	return where, args, query
 }
 
 func (c *Catalog) ExportFiles(query, extension, tag string, driveID int64, includeContent bool, handle func(ExportFile) error) error {
-	where, args, _ := searchFilter(query, extension, tag, driveID, includeContent)
-	rows, err := c.readDB.Query(`SELECT f.filename,COALESCE(NULLIF(d.display_name,''),d.label),f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),f.size,COALESCE(f.modified_at,''),
+	return c.ExportFilesAdvanced(SearchOptions{Query: query, Extension: extension, Tag: tag, DriveID: driveID, IncludeContent: includeContent}, handle)
+}
+
+func (c *Catalog) ExportFilesAdvanced(options SearchOptions, handle func(ExportFile) error) error {
+	where, args, _ := searchFilterAdvanced(options)
+	rows, err := c.readDB.Query(`SELECT f.filename,COALESCE(NULLIF(d.display_name,''),d.label),f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),f.size,COALESCE(f.created_at,''),COALESCE(f.modified_at,''),
 		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN file_tags ft ON ft.tag_id=t.id WHERE ft.drive_id=f.drive_id AND ft.path=f.path ORDER BY t.name COLLATE NOCASE)),''),
 		COALESCE(a.summary,''),COALESCE(a.tags,'[]')
 		FROM files f JOIN drives d ON d.id=f.drive_id LEFT JOIN file_ai_analyses a ON a.drive_id=f.drive_id AND a.path=f.path AND a.source_size=f.size AND a.source_modified=COALESCE(f.modified_at,'')
-		WHERE `+where+` ORDER BY f.filename COLLATE NOCASE,f.path`, args...)
+		WHERE `+where+` ORDER BY `+fileSearchOrder(options.Sort, options.Direction), args...)
 	if err != nil {
 		return err
 	}
@@ -433,7 +485,7 @@ func (c *Catalog) ExportFiles(query, extension, tag string, driveID int64, inclu
 	for rows.Next() {
 		var file ExportFile
 		var tags, aiTags string
-		if err := rows.Scan(&file.Filename, &file.Drive, &file.Path, &file.Extension, &file.MIMEType, &file.Size, &file.Modified, &tags, &file.AISummary, &aiTags); err != nil {
+		if err := rows.Scan(&file.Filename, &file.Drive, &file.Path, &file.Extension, &file.MIMEType, &file.Size, &file.Created, &file.Modified, &tags, &file.AISummary, &aiTags); err != nil {
 			return err
 		}
 		file.Tags = splitStoredTags(tags)
@@ -716,7 +768,7 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	rows, err := c.db.Query(`SELECT d.id,d.label,COALESCE(d.display_name,''),COALESCE(d.inventory_number,''),COALESCE(d.vault_path,''),
 		COALESCE(d.manufacturer,''),COALESCE(d.device_type,''),COALESCE(d.storage_location,''),COALESCE(d.status_id,''),COALESCE(d.health_status,''),COALESCE(d.health_message,''),COALESCE(d.health_source,''),COALESCE(d.health_checked_at,''),COALESCE(d.note,''),COALESCE(d.scan_profile_id,''),
 		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN drive_tags dt ON dt.tag_id=t.id WHERE dt.drive_id=d.id ORDER BY t.name COLLATE NOCASE)),''),
-		d.uuid,COALESCE(d.serial,''),COALESCE(d.vendor,''),COALESCE(d.detected_type,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.updated_at
+		d.uuid,COALESCE(d.serial,''),COALESCE(d.vendor,''),COALESCE(d.detected_type,''),COALESCE(d.fs_type,''),COALESCE(d.model,''),COALESCE(d.total_size,0),COALESCE(d.used_size,0),COUNT(f.id),d.created_at,d.updated_at
 		FROM drives d LEFT JOIN files f ON f.drive_id=d.id GROUP BY d.id ORDER BY COALESCE(NULLIF(d.display_name,''),d.label) COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
@@ -726,7 +778,7 @@ func (c *Catalog) Drives() ([]Drive, error) {
 	for rows.Next() {
 		var drive Drive
 		var tags string
-		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.StatusID, &drive.HealthStatus, &drive.HealthMessage, &drive.HealthSource, &drive.HealthCheckedAt, &drive.Note, &drive.ScanProfileID, &tags, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.UpdatedAt); err != nil {
+		if err := rows.Scan(&drive.ID, &drive.Label, &drive.DisplayName, &drive.InventoryNumber, &drive.Path, &drive.Manufacturer, &drive.DeviceType, &drive.StorageLocation, &drive.StatusID, &drive.HealthStatus, &drive.HealthMessage, &drive.HealthSource, &drive.HealthCheckedAt, &drive.Note, &drive.ScanProfileID, &tags, &drive.UUID, &drive.Serial, &drive.Vendor, &drive.DetectedType, &drive.FSType, &drive.Model, &drive.TotalSize, &drive.UsedSize, &drive.FileCount, &drive.CreatedAt, &drive.UpdatedAt); err != nil {
 			return nil, err
 		}
 		drive.Tags = splitStoredTags(tags)
@@ -931,11 +983,11 @@ func (c *Catalog) SourceFile(id int64) (SourceFile, error) {
 func (c *Catalog) FileDetails(id int64) (FileResult, error) {
 	var file FileResult
 	var aiTags, tags string
-	err := c.readDB.QueryRow(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.modified_at,''),
+	err := c.readDB.QueryRow(`SELECT f.id,f.filename,f.path,COALESCE(f.extension,''),COALESCE(f.mime_type,''),COALESCE(NULLIF(d.display_name,''),d.label),f.size,COALESCE(f.width,0),COALESCE(f.height,0),COALESCE(f.metadata,''),COALESCE(f.created_at,''),COALESCE(f.modified_at,''),
 		COALESCE(a.summary,''),COALESCE(a.tags,'[]'),COALESCE(a.provider,''),COALESCE(a.model,''),COALESCE(a.analyzed_at,''),COALESCE(a.input_bytes,0),COALESCE(a.input_truncated,0),COALESCE(a.image_bytes,0),COALESCE(a.vision,0),
 		COALESCE((SELECT GROUP_CONCAT(name, char(31)) FROM (SELECT t.name name FROM tags t JOIN file_tags ft ON ft.tag_id=t.id WHERE ft.drive_id=f.drive_id AND ft.path=f.path ORDER BY t.name COLLATE NOCASE)),'')
 		FROM files f JOIN drives d ON d.id=f.drive_id LEFT JOIN file_ai_analyses a ON a.drive_id=f.drive_id AND a.path=f.path AND a.source_size=f.size AND a.source_modified=COALESCE(f.modified_at,'') WHERE f.id=?`, id).
-		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Modified, &file.AISummary, &aiTags, &file.AIProvider, &file.AIModel, &file.AIAnalyzedAt, &file.AIInputBytes, &file.AITruncated, &file.AIImageBytes, &file.AIVision, &tags)
+		Scan(&file.ID, &file.Filename, &file.Path, &file.Extension, &file.MIMEType, &file.Drive, &file.Size, &file.Width, &file.Height, &file.Metadata, &file.Created, &file.Modified, &file.AISummary, &aiTags, &file.AIProvider, &file.AIModel, &file.AIAnalyzedAt, &file.AIInputBytes, &file.AITruncated, &file.AIImageBytes, &file.AIVision, &tags)
 	if err == nil && json.Unmarshal([]byte(aiTags), &file.AITags) != nil {
 		file.AITags = []string{}
 	}
@@ -1070,8 +1122,11 @@ func (c *Catalog) UpdateSnapshot(id int64, protected bool, note string, tags []s
 	}
 	return tx.Commit()
 }
-
 func (c *Catalog) SearchArchive(snapshotID int64, query string, page, pageSize int) (ArchiveResult, error) {
+	return c.SearchArchiveAdvanced(snapshotID, query, "", "name", "asc", page, pageSize)
+}
+
+func (c *Catalog) SearchArchiveAdvanced(snapshotID int64, query, extension, sortName, direction string, page, pageSize int) (ArchiveResult, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -1079,20 +1134,31 @@ func (c *Catalog) SearchArchive(snapshotID int64, query string, page, pageSize i
 		pageSize = 100
 	}
 	pattern := "%" + escapeLike(strings.TrimSpace(query)) + "%"
-	args := []any{snapshotID, pattern, pattern}
+	extension = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(extension)), ".")
+	args := []any{snapshotID, pattern, pattern, extension, extension}
 	result := ArchiveResult{Files: make([]ArchivedFile, 0), Page: page, PageSize: pageSize}
-	where := `snapshot_id=? AND (LOWER(filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(path) LIKE LOWER(?) ESCAPE '\')`
+	where := `snapshot_id=? AND (LOWER(filename) LIKE LOWER(?) ESCAPE '\' OR LOWER(path) LIKE LOWER(?) ESCAPE '\') AND (?='' OR extension=?)`
 	if err := c.db.QueryRow("SELECT COUNT(*) FROM archived_files WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := c.db.Query(`SELECT filename,path,COALESCE(extension,''),size,COALESCE(mime_type,''),COALESCE(modified_at,'') FROM archived_files WHERE `+where+` ORDER BY filename COLLATE NOCASE,path LIMIT ? OFFSET ?`, append(args, pageSize, (page-1)*pageSize)...)
+	columns := map[string]string{"name": "filename COLLATE NOCASE", "path": "path COLLATE NOCASE", "type": "extension COLLATE NOCASE", "size": "size", "created": "created_at", "modified": "modified_at"}
+	order := columns[strings.ToLower(strings.TrimSpace(sortName))]
+	if order == "" {
+		order = columns["name"]
+	}
+	if strings.ToUpper(strings.TrimSpace(direction)) == "DESC" {
+		order += " DESC"
+	} else {
+		order += " ASC"
+	}
+	rows, err := c.db.Query(`SELECT filename,path,COALESCE(extension,''),size,COALESCE(mime_type,''),COALESCE(created_at,''),COALESCE(modified_at,'') FROM archived_files WHERE `+where+` ORDER BY `+order+`,path COLLATE NOCASE LIMIT ? OFFSET ?`, append(args, pageSize, (page-1)*pageSize)...)
 	if err != nil {
 		return result, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var file ArchivedFile
-		if err := rows.Scan(&file.Filename, &file.Path, &file.Extension, &file.Size, &file.MIMEType, &file.Modified); err != nil {
+		if err := rows.Scan(&file.Filename, &file.Path, &file.Extension, &file.Size, &file.MIMEType, &file.Created, &file.Modified); err != nil {
 			return result, err
 		}
 		result.Files = append(result.Files, file)
@@ -1121,6 +1187,10 @@ func comparisonArguments(snapshotID int64, status, query string) ([]any, error) 
 }
 
 func (c *Catalog) CompareSnapshot(ctx context.Context, snapshotID int64, status, query string, page, pageSize int) (ComparisonResult, error) {
+	return c.CompareSnapshotAdvanced(ctx, snapshotID, status, query, "path", "asc", page, pageSize)
+}
+
+func (c *Catalog) CompareSnapshotAdvanced(ctx context.Context, snapshotID int64, status, query, sortName, direction string, page, pageSize int) (ComparisonResult, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -1136,7 +1206,17 @@ func (c *Catalog) CompareSnapshot(ctx context.Context, snapshotID int64, status,
 	if err := c.readDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+snapshotComparisonSQL+") WHERE "+where, args...).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := c.readDB.QueryContext(ctx, "SELECT path,status,current_name,current_size,current_modified,archive_name,archive_size,archive_modified FROM ("+snapshotComparisonSQL+") WHERE "+where+" ORDER BY path COLLATE NOCASE LIMIT ? OFFSET ?", append(args, pageSize, (page-1)*pageSize)...)
+	columns := map[string]string{"path": "path COLLATE NOCASE", "status": "status", "currentName": "current_name COLLATE NOCASE", "currentSize": "current_size", "currentModified": "current_modified", "archiveName": "archive_name COLLATE NOCASE", "archiveSize": "archive_size", "archiveModified": "archive_modified"}
+	order := columns[sortName]
+	if order == "" {
+		order = columns["path"]
+	}
+	if strings.ToUpper(strings.TrimSpace(direction)) == "DESC" {
+		order += " DESC"
+	} else {
+		order += " ASC"
+	}
+	rows, err := c.readDB.QueryContext(ctx, "SELECT path,status,current_name,current_size,current_modified,archive_name,archive_size,archive_modified FROM ("+snapshotComparisonSQL+") WHERE "+where+" ORDER BY "+order+",path COLLATE NOCASE LIMIT ? OFFSET ?", append(args, pageSize, (page-1)*pageSize)...)
 	if err != nil {
 		return result, err
 	}
@@ -1351,6 +1431,15 @@ func (c *Catalog) migrate() error {
 			}
 		}
 	}
+	var archiveCreated int
+	if err := c.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('archived_files') WHERE name='created_at'").Scan(&archiveCreated); err != nil {
+		return err
+	}
+	if archiveCreated == 0 {
+		if _, err := c.db.Exec("ALTER TABLE archived_files ADD COLUMN created_at TEXT"); err != nil {
+			return err
+		}
+	}
 	aiColumns := map[string]string{"image_bytes": "INTEGER NOT NULL DEFAULT 0", "vision": "INTEGER NOT NULL DEFAULT 0"}
 	for name, definition := range aiColumns {
 		var count int
@@ -1485,8 +1574,8 @@ func (c *Catalog) ReplaceDriveScan(scan DriveScan) error {
 		if err != nil {
 			return err
 		}
-		if _, err = tx.Exec(`INSERT INTO archived_files(snapshot_id,path,filename,extension,size,mime_type,modified_at)
-			SELECT ?,path,filename,extension,size,mime_type,modified_at FROM files WHERE drive_id=?`, snapshotID, driveID); err != nil {
+		if _, err = tx.Exec(`INSERT INTO archived_files(snapshot_id,path,filename,extension,size,mime_type,created_at,modified_at)
+			SELECT ?,path,filename,extension,size,mime_type,created_at,modified_at FROM files WHERE drive_id=?`, snapshotID, driveID); err != nil {
 			return err
 		}
 		if scan.MaxSnapshots > 0 {

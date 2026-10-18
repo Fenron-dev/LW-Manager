@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS archived_files (
     extension TEXT,
     size INTEGER NOT NULL DEFAULT 0,
     mime_type TEXT,
+    created_at TEXT,
     modified_at TEXT
 );
 

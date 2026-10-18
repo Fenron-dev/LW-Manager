@@ -18,6 +18,64 @@ let inspectedBackup = null;
 let currentScanDiagnostic = null;
 let scanProfiles = [];
 let driveStatuses = [];
+let tagSuggestions = [];
+let librarySort = 'name';
+let librarySortDirection = 'asc';
+let driveSortDirection = 'asc';
+const excludedLibraryDrives = new Set();
+const excludedManagedDrives = new Set();
+
+function replaceDeviceTypeSelect() {
+  const current = $('#edit-device-type');
+  if (!current || current.tagName === 'INPUT') return;
+  const input = document.createElement('input');
+  input.id = current.id;
+  input.setAttribute('list', 'device-type-options');
+  input.placeholder = 'Auswählen oder neu eingeben';
+  current.replaceWith(input);
+}
+
+function selectedDriveExclusions() { return [...excludedLibraryDrives]; }
+
+function updateTagSuggestions(value = '') {
+  const list = $('#tag-options');
+  const text = String(value);
+  const split = text.lastIndexOf(',');
+  const prefix = split >= 0 ? `${text.slice(0, split + 1)} ` : '';
+  const token = text.slice(split + 1).trim().toLocaleLowerCase('de-DE');
+  list.replaceChildren();
+  tagSuggestions.filter((tag) => !token || tag.toLocaleLowerCase('de-DE').includes(token)).forEach((tag) => list.append(new Option(`${prefix}${tag}`, `${prefix}${tag}`)));
+}
+
+function attachTagSuggestions(input) {
+  if (!input || input.dataset.tagSuggestions) return;
+  input.dataset.tagSuggestions = 'true'; input.setAttribute('list', 'tag-options');
+  input.addEventListener('focus', () => updateTagSuggestions(input.value));
+  input.addEventListener('input', () => updateTagSuggestions(input.value));
+}
+
+function renderDriveChecklist(selector, drives, excluded, onChange, allLabel) {
+  const details = $(selector);
+  if (!details) return;
+  const menu = details.querySelector('.multi-filter-menu');
+  menu.replaceChildren();
+  for (const id of [...excluded]) if (!drives.some((drive) => drive.id === id)) excluded.delete(id);
+  const all = document.createElement('button');
+  all.type = 'button'; all.className = 'multi-filter-all'; all.textContent = excluded.size ? 'Alle auswählen' : 'Alle abwählen';
+  all.addEventListener('click', () => {
+    if (excluded.size) excluded.clear(); else drives.forEach((drive) => excluded.add(drive.id));
+    renderDriveChecklist(selector, drives, excluded, onChange, allLabel); onChange();
+  });
+  menu.append(all);
+  drives.forEach((drive) => {
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = !excluded.has(drive.id);
+    checkbox.addEventListener('change', () => { if (checkbox.checked) excluded.delete(drive.id); else excluded.add(drive.id); renderDriveChecklist(selector, drives, excluded, onChange, allLabel); onChange(); });
+    label.append(checkbox, document.createTextNode(driveName(drive))); menu.append(label);
+  });
+  const selected = drives.length - excluded.size;
+  details.querySelector('summary').textContent = selected === drives.length ? allLabel : `${selected} von ${drives.length} ausgewählt`;
+}
 
 function renderDriveStatuses() {
   const list = $('#drive-status-list');
@@ -888,10 +946,13 @@ function renderFiles(files) {
     const size = document.createElement('span');
     size.className = 'file-size';
     size.textContent = formatBytes(file.size);
+    const created = document.createElement('span');
+    created.className = 'file-date';
+    created.textContent = formatDate(file.created);
     const date = document.createElement('span');
     date.className = 'file-date';
     date.textContent = formatDate(file.modified);
-    row.append(name, drive, path, type, size, date);
+    row.append(name, drive, path, type, size, created, date);
     row.addEventListener('click', () => openFileDialog(file));
     container.append(row);
   }
@@ -901,16 +962,14 @@ async function loadLibrary(page = 1) {
   libraryPage = Math.max(1, page);
   $('#result-count').textContent = 'Suche läuft …';
   try {
-    const result = await window.go.main.App.SearchFiles($('#search-input').value, $('#extension-filter').value, $('#library-tag-filter').value, Number($('#drive-filter').value), $('#content-search').checked, libraryPage);
+    const result = await window.go.main.App.SearchFilesAdvanced({query: $('#search-input').value, extension: $('#extension-filter').value, tag: $('#library-tag-filter').value, driveId: 0, excludedDriveIds: selectedDriveExclusions(), includeContent: $('#content-search').checked, sort: librarySort, direction: librarySortDirection}, libraryPage);
     libraryTotal = result.total;
     libraryPageSize = result.pageSize;
     renderFiles(result.files);
     if (!extensionsLoaded) {
-      const filter = $('#extension-filter');
-      const selected = filter.value;
-      filter.replaceChildren(new Option('Alle Dateitypen', ''));
-      result.extensions.sort((left, right) => left.localeCompare(right, 'de', {sensitivity: 'base'})).forEach((extension) => filter.add(new Option(`.${extension}`, extension)));
-      filter.value = selected;
+      const options = $('#extension-options');
+      options.replaceChildren();
+      result.extensions.sort((left, right) => left.localeCompare(right, 'de', {sensitivity: 'base'})).forEach((extension) => options.append(new Option(`.${extension}`, extension)));
       extensionsLoaded = true;
     }
     const pages = Math.max(1, Math.ceil(libraryTotal / libraryPageSize));
@@ -930,8 +989,8 @@ async function exportLibrary(format = 'csv') {
 	button.disabled = true;
 	$('#export-status').textContent = ` · ${format.toUpperCase()}-Export wird erstellt …`;
 	try {
-		const method = format === 'json' ? window.go.main.App.ExportLibraryJSON : window.go.main.App.ExportLibraryCSV;
-		const result = await method($('#search-input').value, $('#extension-filter').value, $('#library-tag-filter').value, Number($('#drive-filter').value), $('#content-search').checked);
+		const method = format === 'json' ? window.go.main.App.ExportLibraryJSONAdvanced : window.go.main.App.ExportLibraryCSVAdvanced;
+		const result = await method({query: $('#search-input').value, extension: $('#extension-filter').value, tag: $('#library-tag-filter').value, driveId: 0, excludedDriveIds: selectedDriveExclusions(), includeContent: $('#content-search').checked, sort: librarySort, direction: librarySortDirection});
 		$('#export-status').textContent = result.cancelled ? '' : ` · ${result.files.toLocaleString('de-DE')} Dateien als ${format.toUpperCase()} (${formatBytes(result.bytes)}) exportiert`;
 	} catch (error) {
 		$('#export-status').textContent = ` · Export fehlgeschlagen: ${error}`;
@@ -969,6 +1028,9 @@ async function refreshTags() {
   fillTagFilter('#library-tag-filter', tags, 'libraryCount', 'Alle Tags');
   fillTagFilter('#drive-tag-filter', tags, 'driveCount', 'Alle Tags');
   fillTagFilter('#compare-tag-filter', tags, 'snapshotCount', 'Alle Tags');
+  tagSuggestions = tags.map((tag) => tag.name);
+  updateTagSuggestions();
+  ['#edit-drive-tags', '#edit-file-tags'].forEach((selector) => attachTagSuggestions($(selector)));
   return tags;
 }
 
@@ -979,17 +1041,23 @@ async function loadDrives() {
   const list = $('#drive-list');
   list.replaceChildren();
   const selectedTag = $('#drive-tag-filter').value.toLocaleLowerCase('de-DE');
-  const visibleDrives = selectedTag ? drives.filter((drive) => (drive.tags || []).some((tag) => tag.toLocaleLowerCase('de-DE') === selectedTag)) : drives;
+  renderDriveChecklist('#library-drive-filter', drives, excludedLibraryDrives, () => loadLibrary(1), 'Alle Datenträger');
+  renderDriveChecklist('#managed-drive-filter', drives, excludedManagedDrives, loadDrives, 'Alle auswählen');
+  const deviceTypes = $('#device-type-options');
+  const knownTypes = new Set([...deviceTypes.options].map((option) => option.value));
+  drives.forEach((drive) => { if (drive.deviceType && !knownTypes.has(drive.deviceType)) { deviceTypes.append(new Option(drive.deviceType, drive.deviceType)); knownTypes.add(drive.deviceType); } });
+  const sort = $('#drive-sort').value;
+  const factor = driveSortDirection === 'desc' ? -1 : 1;
+  const compareText = (a, b) => String(a || '').localeCompare(String(b || ''), 'de', {numeric: true, sensitivity: 'base'});
+  const compareNumber = (a, b) => Number(a || 0) - Number(b || 0);
+  const sorters = {name: (a,b) => compareText(driveName(a), driveName(b)), number: (a,b) => compareText(a.inventoryNumber,b.inventoryNumber), total: (a,b) => compareNumber(a.totalSize,b.totalSize), used: (a,b) => compareNumber(a.usedSize,b.usedSize), free: (a,b) => compareNumber(a.totalSize-a.usedSize,b.totalSize-b.usedSize), created: (a,b) => compareText(a.createdAt,b.createdAt), updated: (a,b) => compareText(a.updatedAt,b.updatedAt)};
+  const visibleDrives = drives.filter((drive) => !excludedManagedDrives.has(drive.id) && (!selectedTag || (drive.tags || []).some((tag) => tag.toLocaleLowerCase('de-DE') === selectedTag))).sort((a,b) => factor * (sorters[sort] || sorters.name)(a,b));
   $('#drives-empty').classList.toggle('hidden', visibleDrives.length !== 0);
   $('#drives-empty').textContent = drives.length ? 'Keine Datenträger mit diesem Tag gefunden.' : 'Noch keine Datenträger katalogisiert.';
-  const filter = $('#drive-filter');
   const compareDrive = $('#compare-drive');
-  const selectedDrive = filter.value;
   const selectedCompareDrive = compareDrive.value;
-  filter.replaceChildren(new Option('Alle Datenträger', '0'));
   compareDrive.replaceChildren(new Option('Datenträger auswählen', '0'));
   for (const drive of drives) {
-    filter.add(new Option(driveName(drive), String(drive.id)));
     compareDrive.add(new Option(driveName(drive), String(drive.id)));
     if (!visibleDrives.includes(drive)) continue;
     const row = document.createElement('div');
@@ -1024,7 +1092,7 @@ async function loadDrives() {
     capacity.append(capacityText, bar);
     const files = document.createElement('span');
     files.className = 'drive-cell';
-    files.textContent = `${drive.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(free)} frei`;
+    files.textContent = `${drive.fileCount.toLocaleString('de-DE')} Dateien · ${formatBytes(free)} frei · hinzugefügt ${formatDate(drive.createdAt)} · aktualisiert ${formatDate(drive.updatedAt)}`;
     const actions = document.createElement('div');
     actions.className = 'drive-row-actions';
     const history = document.createElement('button');
@@ -1074,7 +1142,6 @@ async function loadDrives() {
     });
     list.append(row, treePanel);
   }
-  filter.value = [...filter.options].some((option) => option.value === selectedDrive) ? selectedDrive : '0';
   compareDrive.value = [...compareDrive.options].some((option) => option.value === selectedCompareDrive) ? selectedCompareDrive : '0';
   return drives;
 }
@@ -1171,7 +1238,7 @@ async function loadComparison(page = 1) {
   $('#compare-button').disabled = true;
   let result;
   try {
-    result = await withTimeout(window.go.main.App.CompareSnapshot(snapshotID,$('#compare-status').value,$('#compare-query').value,comparisonPage),21000,'Zeitüberschreitung beim Archivvergleich');
+    result = await withTimeout(window.go.main.App.CompareSnapshotAdvanced(snapshotID,$('#compare-status').value,$('#compare-query').value,$('#compare-sort')?.value || 'path',$('#compare-sort-direction')?.textContent === '↓' ? 'desc' : 'asc',comparisonPage),21000,'Zeitüberschreitung beim Archivvergleich');
   } catch (error) {
     $('#comparison-meta').textContent = `Vergleich fehlgeschlagen: ${error}`;
     $('#comparison-results').replaceChildren();
@@ -1260,6 +1327,7 @@ async function exportComparisonHTML() {
 }
 
 async function openArchiveDialog(drive) {
+  ensureArchiveControls();
   $('#archive-dialog-title').textContent = driveName(drive);
   $('#snapshot-list').classList.remove('hidden');
   $('#archive-browser').classList.add('hidden');
@@ -1267,10 +1335,33 @@ async function openArchiveDialog(drive) {
   await loadSnapshots(drive.id);
 }
 
+function ensureArchiveControls() {
+  if (!$('#snapshot-sort')) {
+    const controls = document.createElement('div'); controls.className = 'archive-filter-row';
+    controls.innerHTML = '<label>Archivstände sortieren <select id="snapshot-sort"><option value="captured">Datum</option><option value="files">Dateien</option><option value="size">Größe</option></select></label><button id="snapshot-sort-direction" type="button" class="secondary compact">↓</button>';
+    $('#snapshot-list').before(controls);
+    $('#snapshot-sort').addEventListener('change', () => loadSnapshots(Number($('#snapshot-list').dataset.driveId)));
+    $('#snapshot-sort-direction').addEventListener('click', (event) => { event.currentTarget.textContent = event.currentTarget.textContent === '↓' ? '↑' : '↓'; loadSnapshots(Number($('#snapshot-list').dataset.driveId)); });
+  }
+  if (!$('#archive-extension')) {
+    const toolbar = $('.archive-toolbar');
+    const extension = document.createElement('input'); extension.id = 'archive-extension'; extension.type = 'search'; extension.placeholder = 'Endung filtern'; extension.setAttribute('list', 'extension-options');
+    const sort = document.createElement('select'); sort.id = 'archive-sort'; sort.innerHTML = '<option value="name">Name</option><option value="path">Pfad</option><option value="type">Typ</option><option value="size">Größe</option><option value="created">Erstellt</option><option value="modified">Geändert</option>';
+    const direction = document.createElement('button'); direction.id = 'archive-sort-direction'; direction.type = 'button'; direction.className = 'secondary'; direction.textContent = '↑';
+    toolbar.insertBefore(extension, $('#archive-search-button')); toolbar.insertBefore(sort, $('#archive-search-button')); toolbar.insertBefore(direction, $('#archive-search-button'));
+    extension.addEventListener('change', () => loadArchiveFiles(1)); sort.addEventListener('change', () => loadArchiveFiles(1)); direction.addEventListener('click', () => { direction.textContent = direction.textContent === '↑' ? '↓' : '↑'; loadArchiveFiles(1); });
+  }
+}
+
 async function loadSnapshots(driveID) {
   const list = $('#snapshot-list');
+  list.dataset.driveId = driveID;
   list.textContent = 'Archivstände werden geladen …';
   const snapshots = await window.go.main.App.GetDriveSnapshots(driveID);
+  const sort = $('#snapshot-sort')?.value || 'captured';
+  const direction = $('#snapshot-sort-direction')?.textContent === '↑' ? 1 : -1;
+  const value = {captured: (item) => item.capturedAt, files: (item) => item.fileCount, size: (item) => item.totalBytes}[sort];
+  snapshots.sort((a,b) => direction * (typeof value(a) === 'number' ? value(a)-value(b) : String(value(a)).localeCompare(String(value(b)))));
   list.replaceChildren();
   if (!snapshots.length) {
     const empty = document.createElement('div');
@@ -1310,7 +1401,7 @@ async function loadSnapshots(driveID) {
     const noteLabel = document.createElement('label'); noteLabel.textContent = 'Bemerkung';
     const note = document.createElement('textarea'); note.rows = 2; note.value = snapshot.note || ''; note.placeholder = 'Bemerkung zu diesem Scan-Stand'; noteLabel.append(note);
     const tagLabel = document.createElement('label'); tagLabel.textContent = 'Tags';
-    const tags = document.createElement('input'); tags.value = (snapshot.tags || []).join(', '); tags.placeholder = 'z. B. Referenz, Übergabe'; tagLabel.append(tags);
+    const tags = document.createElement('input'); tags.value = (snapshot.tags || []).join(', '); tags.placeholder = 'z. B. Referenz, Übergabe'; attachTagSuggestions(tags); tagLabel.append(tags);
     const save = document.createElement('button'); save.type = 'button'; save.className = 'secondary compact'; save.textContent = 'Angaben speichern';
     const status = document.createElement('span'); status.className = 'snapshot-save-status';
     const persist = async () => {
@@ -1340,7 +1431,7 @@ async function openSnapshot(snapshotID) {
 
 async function loadArchiveFiles(page = archivePage) {
   archivePage = Math.max(1, page);
-  const result = await window.go.main.App.SearchSnapshot(activeSnapshot, $('#archive-search').value, archivePage);
+  const result = await window.go.main.App.SearchSnapshotAdvanced(activeSnapshot, $('#archive-search').value, $('#archive-extension')?.value || '', $('#archive-sort')?.value || 'name', $('#archive-sort-direction')?.textContent === '↓' ? 'desc' : 'asc', archivePage);
   archivePages = Math.max(1, Math.ceil(result.total / result.pageSize));
   $('#archive-meta').textContent = `${result.total.toLocaleString('de-DE')} archivierte Dateien · Seite ${archivePage} von ${archivePages}`;
   const list = $('#archive-files');
@@ -1354,7 +1445,8 @@ async function loadArchiveFiles(page = archivePage) {
     path.textContent = file.path;
     const size = document.createElement('span');
     size.textContent = formatBytes(file.size);
-    row.append(name, path, size);
+    const dates = document.createElement('span'); dates.textContent = `Erstellt ${formatDate(file.created)} · geändert ${formatDate(file.modified)}`;
+    row.append(name, path, size, dates);
     list.append(row);
   }
   $('#archive-previous').disabled = archivePage <= 1;
@@ -1553,6 +1645,14 @@ async function openFileDialog(file) {
   const dimensions = file.width && file.height ? ` · ${file.width.toLocaleString('de-DE')} × ${file.height.toLocaleString('de-DE')} px` : '';
   $('#detail-type').textContent = `${file.mimeType || (file.extension ? `.${file.extension}` : 'Unbekannt')}${dimensions}`;
   $('#detail-size').textContent = formatBytes(file.size);
+  let createdDetail = $('#detail-created');
+  if (!createdDetail) {
+    const wrapper = document.createElement('div');
+    const term = document.createElement('dt'); term.textContent = 'Erstellt';
+    createdDetail = document.createElement('dd'); createdDetail.id = 'detail-created';
+    wrapper.append(term, createdDetail); $('#detail-modified').closest('div').before(wrapper);
+  }
+  createdDetail.textContent = formatDate(file.created);
   $('#detail-modified').textContent = formatDate(file.modified);
 	['#reveal-file-button', '#open-folder-button', '#copy-relative-path-button', '#copy-full-path-button'].forEach((selector) => { $(selector).dataset.fileId = file.id || ''; $(selector).disabled = true; });
 	$('#file-location-status').textContent = file.id ? 'Speicherort wird geprüft …' : 'Kein aktueller Katalogeintrag';
@@ -2033,6 +2133,23 @@ window.runtime.EventsOn('scan:progress', (event) => {
 window.runtime.EventsOn('duplicates:progress', (event) => {
   $('#duplicate-status').textContent = `${event.done.toLocaleString('de-DE')} von ${event.total.toLocaleString('de-DE')} Kandidaten geprüft …`;
 });
+replaceDeviceTypeSelect();
+['#edit-drive-tags', '#edit-file-tags'].forEach((selector) => $(selector)?.setAttribute('list', 'tag-options'));
+if (!$('#compare-sort')) {
+  const sort = document.createElement('select'); sort.id = 'compare-sort'; sort.innerHTML = '<option value="path">Pfad</option><option value="status">Status</option><option value="currentName">Aktueller Name</option><option value="currentSize">Aktuelle Größe</option><option value="currentModified">Aktuell geändert</option><option value="archiveName">Archivname</option><option value="archiveSize">Archivgröße</option><option value="archiveModified">Archiv geändert</option>';
+  const direction = document.createElement('button'); direction.id = 'compare-sort-direction'; direction.type = 'button'; direction.className = 'secondary compact'; direction.textContent = '↑';
+  $('.comparison-actions').prepend(sort, direction);
+  sort.addEventListener('change', () => loadComparison(1));
+  direction.addEventListener('click', () => { direction.textContent = direction.textContent === '↑' ? '↓' : '↑'; loadComparison(1); });
+}
+document.querySelectorAll('[data-library-sort]').forEach((button) => button.addEventListener('click', () => {
+  const next = button.dataset.librarySort;
+  if (librarySort === next) librarySortDirection = librarySortDirection === 'asc' ? 'desc' : 'asc'; else { librarySort = next; librarySortDirection = 'asc'; }
+  document.querySelectorAll('[data-library-sort]').forEach((item) => { item.classList.toggle('active', item.dataset.librarySort === librarySort); item.dataset.direction = item.dataset.librarySort === librarySort ? librarySortDirection : ''; });
+  loadLibrary(1);
+}));
+const initialLibrarySort = document.querySelector(`[data-library-sort="${librarySort}"]`);
+if (initialLibrarySort) { initialLibrarySort.classList.add('active'); initialLibrarySort.dataset.direction = librarySortDirection; }
 scanButton.addEventListener('click', startScan);
 $('#nav-overview').addEventListener('click', showOverview);
 $('#nav-library').addEventListener('click', showLibrary);
@@ -2074,9 +2191,11 @@ $('#refresh-volumes-button').addEventListener('click', async () => {
 $('#search-button').addEventListener('click', () => loadLibrary(1));
 $('#search-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadLibrary(1); });
 $('#extension-filter').addEventListener('change', () => loadLibrary(1));
-$('#drive-filter').addEventListener('change', () => loadLibrary(1));
+$('#extension-filter').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadLibrary(1); });
 $('#library-tag-filter').addEventListener('change', () => loadLibrary(1));
 $('#drive-tag-filter').addEventListener('change', loadDrives);
+$('#drive-sort').addEventListener('change', loadDrives);
+$('#drive-sort-direction').addEventListener('click', () => { driveSortDirection = driveSortDirection === 'asc' ? 'desc' : 'asc'; $('#drive-sort-direction').textContent = driveSortDirection === 'asc' ? '↑' : '↓'; loadDrives(); });
 $('#content-search').addEventListener('change', () => loadLibrary(1));
 $('#previous-page').addEventListener('click', () => loadLibrary(libraryPage - 1));
 $('#next-page').addEventListener('click', () => loadLibrary(libraryPage + 1));

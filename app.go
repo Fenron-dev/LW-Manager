@@ -34,7 +34,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.0.6-dev"
+var appVersion = "1.0.7-dev"
 
 type App struct {
 	ctx        context.Context
@@ -56,6 +56,17 @@ type AppInfo struct {
 	Message    string `json:"message"`
 	FileCount  int64  `json:"fileCount"`
 	DriveCount int64  `json:"driveCount"`
+}
+
+type LibraryQuery struct {
+	Query            string  `json:"query"`
+	Extension        string  `json:"extension"`
+	Tag              string  `json:"tag"`
+	DriveID          int64   `json:"driveId"`
+	ExcludedDriveIDs []int64 `json:"excludedDriveIds"`
+	IncludeContent   bool    `json:"includeContent"`
+	Sort             string  `json:"sort"`
+	Direction        string  `json:"direction"`
 }
 
 type ScanResult struct {
@@ -325,6 +336,10 @@ func (a *App) GetAppInfo() AppInfo {
 }
 
 func (a *App) SearchFiles(query, extension, tag string, driveID int64, includeContent bool, page int) (LibraryResult, error) {
+	return a.SearchFilesAdvanced(LibraryQuery{Query: query, Extension: extension, Tag: tag, DriveID: driveID, IncludeContent: includeContent}, page)
+}
+
+func (a *App) SearchFilesAdvanced(options LibraryQuery, page int) (LibraryResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return LibraryResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
@@ -332,7 +347,7 @@ func (a *App) SearchFiles(query, extension, tag string, driveID int64, includeCo
 		page = 1
 	}
 	const pageSize = 50
-	result, err := a.catalog.Search(query, extension, tag, driveID, includeContent, pageSize, (page-1)*pageSize)
+	result, err := a.catalog.SearchAdvanced(database.SearchOptions{Query: options.Query, Extension: options.Extension, Tag: options.Tag, DriveID: options.DriveID, ExcludedDriveIDs: options.ExcludedDriveIDs, IncludeContent: options.IncludeContent, Sort: options.Sort, Direction: options.Direction}, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return LibraryResult{}, err
 	}
@@ -340,6 +355,10 @@ func (a *App) SearchFiles(query, extension, tag string, driveID int64, includeCo
 }
 
 func (a *App) ExportLibraryCSV(query, extension, tag string, driveID int64, includeContent bool) (ExportResult, error) {
+	return a.ExportLibraryCSVAdvanced(LibraryQuery{Query: query, Extension: extension, Tag: tag, DriveID: driveID, IncludeContent: includeContent})
+}
+
+func (a *App) ExportLibraryCSVAdvanced(options LibraryQuery) (ExportResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return ExportResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
@@ -382,16 +401,16 @@ func (a *App) ExportLibraryCSV(query, extension, tag string, driveID int64, incl
 	}
 	writer := csv.NewWriter(limited)
 	writer.Comma = ';'
-	header := []string{"Dateiname", "Datenträger", "Relativer Pfad", "Dateiendung", "MIME-Typ", "Größe (Bytes)", "Geändert", "Manuelle Tags", "KI-Tags", "KI-Zusammenfassung"}
+	header := []string{"Dateiname", "Datenträger", "Relativer Pfad", "Dateiendung", "MIME-Typ", "Größe (Bytes)", "Erstellt", "Geändert", "Manuelle Tags", "KI-Tags", "KI-Zusammenfassung"}
 	if err := writer.Write(header); err != nil {
 		cleanup()
 		return ExportResult{}, err
 	}
 	result := ExportResult{Path: destination}
-	err = a.catalog.ExportFiles(query, extension, tag, driveID, includeContent, func(file database.ExportFile) error {
+	err = a.catalog.ExportFilesAdvanced(database.SearchOptions{Query: options.Query, Extension: options.Extension, Tag: options.Tag, DriveID: options.DriveID, ExcludedDriveIDs: options.ExcludedDriveIDs, IncludeContent: options.IncludeContent, Sort: options.Sort, Direction: options.Direction}, func(file database.ExportFile) error {
 		if err := writer.Write([]string{
 			csvSafe(file.Filename), csvSafe(file.Drive), csvSafe(file.Path), csvSafe(file.Extension), csvSafe(file.MIMEType), strconv.FormatInt(file.Size, 10),
-			csvSafe(file.Modified), csvSafe(strings.Join(file.Tags, ", ")), csvSafe(strings.Join(file.AITags, ", ")), csvSafe(file.AISummary),
+			csvSafe(file.Created), csvSafe(file.Modified), csvSafe(strings.Join(file.Tags, ", ")), csvSafe(strings.Join(file.AITags, ", ")), csvSafe(file.AISummary),
 		}); err != nil {
 			return err
 		}
@@ -433,7 +452,10 @@ type catalogJSONHeader struct {
 		Extension      string `json:"extension"`
 		Tag            string `json:"tag"`
 		DriveID        int64  `json:"driveId"`
+		ExcludedDriveIDs []int64 `json:"excludedDriveIds"`
 		IncludeContent bool   `json:"includeContent"`
+		Sort           string `json:"sort"`
+		Direction      string `json:"direction"`
 	} `json:"filters"`
 }
 
@@ -477,6 +499,10 @@ func writeCatalogJSON(writer io.Writer, header catalogJSONHeader, export func(fu
 }
 
 func (a *App) ExportLibraryJSON(query, extension, tag string, driveID int64, includeContent bool) (ExportResult, error) {
+	return a.ExportLibraryJSONAdvanced(LibraryQuery{Query: query, Extension: extension, Tag: tag, DriveID: driveID, IncludeContent: includeContent})
+}
+
+func (a *App) ExportLibraryJSONAdvanced(options LibraryQuery) (ExportResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return ExportResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
@@ -513,14 +539,17 @@ func (a *App) ExportLibraryJSON(query, extension, tag string, driveID int64, inc
 	}
 	limited := &exportLimitWriter{writer: temporary, maximum: maximum, label: "JSON-Export"}
 	header := catalogJSONHeader{Format: "vaultapp.catalog", Version: 1, ExportedAt: time.Now().UTC().Format(time.RFC3339)}
-	header.Filters.Query = query
-	header.Filters.Extension = extension
-	header.Filters.Tag = tag
-	header.Filters.DriveID = driveID
-	header.Filters.IncludeContent = includeContent
+	header.Filters.Query = options.Query
+	header.Filters.Extension = options.Extension
+	header.Filters.Tag = options.Tag
+	header.Filters.DriveID = options.DriveID
+	header.Filters.ExcludedDriveIDs = options.ExcludedDriveIDs
+	header.Filters.IncludeContent = options.IncludeContent
+	header.Filters.Sort = options.Sort
+	header.Filters.Direction = options.Direction
 	result := ExportResult{Path: destination}
 	result.Files, err = writeCatalogJSON(limited, header, func(handle func(database.ExportFile) error) error {
-		return a.catalog.ExportFiles(query, extension, tag, driveID, includeContent, handle)
+		return a.catalog.ExportFilesAdvanced(database.SearchOptions{Query: options.Query, Extension: options.Extension, Tag: options.Tag, DriveID: options.DriveID, ExcludedDriveIDs: options.ExcludedDriveIDs, IncludeContent: options.IncludeContent, Sort: options.Sort, Direction: options.Direction}, handle)
 	})
 	if err == nil {
 		err = temporary.Sync()
@@ -2131,10 +2160,14 @@ func (a *App) GetDriveSnapshots(driveID int64) ([]database.Snapshot, error) {
 }
 
 func (a *App) SearchSnapshot(snapshotID int64, query string, page int) (database.ArchiveResult, error) {
+	return a.SearchSnapshotAdvanced(snapshotID, query, "", "name", "asc", page)
+}
+
+func (a *App) SearchSnapshotAdvanced(snapshotID int64, query, extension, sortName, direction string, page int) (database.ArchiveResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return database.ArchiveResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
-	return a.catalog.SearchArchive(snapshotID, query, page, 100)
+	return a.catalog.SearchArchiveAdvanced(snapshotID, query, extension, sortName, direction, page, 100)
 }
 
 func (a *App) DeleteSnapshot(snapshotID int64) error {
@@ -2152,12 +2185,16 @@ func (a *App) UpdateSnapshot(snapshotID int64, protected bool, note string, tags
 }
 
 func (a *App) CompareSnapshot(snapshotID int64, status, query string, page int) (database.ComparisonResult, error) {
+	return a.CompareSnapshotAdvanced(snapshotID, status, query, "path", "asc", page)
+}
+
+func (a *App) CompareSnapshotAdvanced(snapshotID int64, status, query, sortName, direction string, page int) (database.ComparisonResult, error) {
 	if a.initErr != nil || a.catalog == nil {
 		return database.ComparisonResult{}, fmt.Errorf("Vault ist nicht bereit: %v", a.initErr)
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
 	defer cancel()
-	return a.catalog.CompareSnapshot(ctx, snapshotID, status, query, page, 100)
+	return a.catalog.CompareSnapshotAdvanced(ctx, snapshotID, status, query, sortName, direction, page, 100)
 }
 
 func (a *App) CompareSnapshotDirectory(snapshotID int64, directory, status string) ([]database.ComparisonTreeEntry, error) {

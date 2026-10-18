@@ -128,6 +128,58 @@ func TestScanningAnotherDrivePreservesExistingDriveContents(t *testing.T) {
 	}
 }
 
+func TestAdvancedLibrarySearchSortsAndExcludesDrives(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	older := time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(24 * time.Hour)
+	if err := catalog.ReplaceDriveScan(DriveScan{Path: t.TempDir(), Label: "A", UUID: "advanced-a", Files: []scanner.File{
+		{Path: "zeta.txt", Filename: "zeta.txt", Extension: "txt", Size: 10, CreatedAt: older, Modified: newer},
+		{Path: "alpha.md", Filename: "alpha.md", Extension: "md", Size: 20, CreatedAt: newer, Modified: older},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.ReplaceDriveScan(DriveScan{Path: t.TempDir(), Label: "B", UUID: "advanced-b", Files: []scanner.File{{Path: "other.log", Filename: "other.log", Extension: "log", Size: 30, CreatedAt: older, Modified: older}}}); err != nil {
+		t.Fatal(err)
+	}
+	drives, err := catalog.Drives()
+	if err != nil || len(drives) != 2 || drives[0].CreatedAt == "" {
+		t.Fatalf("drives = %#v, %v", drives, err)
+	}
+	result, err := catalog.SearchAdvanced(SearchOptions{Sort: "created", Direction: "desc", ExcludedDriveIDs: []int64{drives[1].ID}}, 50, 0)
+	if err != nil || result.Total != 2 || len(result.Files) != 2 || result.Files[0].Filename != "alpha.md" || result.Files[0].Created == "" {
+		t.Fatalf("advanced result = %#v, %v", result, err)
+	}
+	result, err = catalog.SearchAdvanced(SearchOptions{Extension: ".txt"}, 50, 0)
+	if err != nil || result.Total != 1 || result.Files[0].Filename != "zeta.txt" || len(result.Extensions) != 3 {
+		t.Fatalf("extension result = %#v, %v", result, err)
+	}
+}
+
+func TestArchiveSearchFiltersExtensionAndSorts(t *testing.T) {
+	catalog := openMetadataTestCatalog(t)
+	root := t.TempDir()
+	created := time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC)
+	if err := catalog.ReplaceDriveScan(DriveScan{Path: root, Label: "ARCHIV", UUID: "archive-sort", Archive: true, Files: []scanner.File{
+		{Path: "b.txt", Filename: "b.txt", Extension: "txt", Size: 20, CreatedAt: created, Modified: created},
+		{Path: "a.txt", Filename: "a.txt", Extension: "txt", Size: 10, CreatedAt: created.Add(time.Hour), Modified: created},
+		{Path: "c.md", Filename: "c.md", Extension: "md", Size: 30, CreatedAt: created, Modified: created},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.ReplaceDriveScan(DriveScan{Path: root, Label: "ARCHIV", UUID: "archive-sort", Archive: true}); err != nil {
+		t.Fatal(err)
+	}
+	drives, _ := catalog.Drives()
+	snapshots, err := catalog.Snapshots(drives[0].ID)
+	if err != nil || len(snapshots) != 1 {
+		t.Fatalf("snapshots = %#v, %v", snapshots, err)
+	}
+	result, err := catalog.SearchArchiveAdvanced(snapshots[0].ID, "", ".txt", "size", "desc", 1, 100)
+	if err != nil || result.Total != 2 || result.Files[0].Filename != "b.txt" || result.Files[0].Created == "" {
+		t.Fatalf("archive result = %#v, %v", result, err)
+	}
+}
+
 func TestRenameMergeAndDeleteTags(t *testing.T) {
 	catalog := openMetadataTestCatalog(t)
 	for _, volume := range []string{"volume-a", "volume-b"} {
