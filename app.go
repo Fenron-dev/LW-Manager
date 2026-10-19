@@ -74,20 +74,20 @@ type LibraryQuery struct {
 }
 
 type ScanResult struct {
-	Cancelled       bool            `json:"cancelled"`
-	Drive           string          `json:"drive"`
-	DriveUUID       string          `json:"driveUUID"`
-	Profile         string          `json:"profile"`
-	Files           int             `json:"files"`
-	Bytes           int64           `json:"bytes"`
-	Skipped         int             `json:"skipped"`
-	Excluded        int             `json:"excluded"`
-	Issues          []scanner.Issue `json:"issues"`
-	IssuesTruncated bool            `json:"issuesTruncated"`
-	LogPath         string          `json:"logPath"`
-	Message         string          `json:"message"`
+	Cancelled       bool                 `json:"cancelled"`
+	Drive           string               `json:"drive"`
+	DriveUUID       string               `json:"driveUUID"`
+	Profile         string               `json:"profile"`
+	Files           int                  `json:"files"`
+	Bytes           int64                `json:"bytes"`
+	Skipped         int                  `json:"skipped"`
+	Excluded        int                  `json:"excluded"`
+	Issues          []scanner.Issue      `json:"issues"`
+	IssuesTruncated bool                 `json:"issuesTruncated"`
+	LogPath         string               `json:"logPath"`
+	Message         string               `json:"message"`
 	Health          storage.HealthReport `json:"health"`
-	DriveID         int64 `json:"driveId"`
+	DriveID         int64                `json:"driveId"`
 	Changes         database.ScanChanges `json:"changes"`
 }
 
@@ -2612,7 +2612,9 @@ func (a *App) scanPathLocked(ctx context.Context, selected string, detected stor
 	}
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected, "profile": profileName})
 	changes, err := a.catalog.ScanChanges(identity.UUID, selected, report.Files)
-	if err != nil { return ScanResult{}, fmt.Errorf("Änderungen bestimmen: %w", err) }
+	if err != nil {
+		return ScanResult{}, fmt.Errorf("Änderungen bestimmen: %w", err)
+	}
 	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Vendor: identity.Vendor, Model: identity.Model, Serial: identity.Serial, DeviceType: identity.DeviceType, Archive: settings.ArchiveEnabled, MaxSnapshots: settings.MaxSnapshots}); err != nil {
 		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
@@ -2636,7 +2638,9 @@ func (a *App) scanPathLocked(ctx context.Context, selected string, detected stor
 	result.Health = health
 	result.Changes = changes
 	result.DriveID, err = a.catalog.DriveIDForIdentity(identity.UUID, selected)
-	if err != nil { return ScanResult{}, fmt.Errorf("gespeicherten Datenträger bestimmen: %w", err) }
+	if err != nil {
+		return ScanResult{}, fmt.Errorf("gespeicherten Datenträger bestimmen: %w", err)
+	}
 	result.LogPath = a.writeScanDiagnostic(diagnostic)
 	wailsruntime.EventsEmit(a.ctx, "scan:complete", result)
 	return result, nil

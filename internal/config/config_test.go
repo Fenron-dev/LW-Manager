@@ -77,7 +77,9 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err := Load(path)
-	if err == nil && (!loaded.AutoImportEnabled || loaded.AutoImportRequireSMART) { t.Fatal("automatic import options were not saved") }
+	if err == nil && (!loaded.AutoImportEnabled || loaded.AutoImportRequireSMART) {
+		t.Fatal("automatic import options were not saved")
+	}
 	if err != nil || loaded.MaxSnapshots != 3 || loaded.SmartAutoCheckEnabled {
 		t.Fatalf("reloaded settings: %+v, %v", loaded, err)
 	}

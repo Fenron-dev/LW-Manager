@@ -43,6 +43,8 @@ func TestParseSmartctlReportsRunningSelfTests(t *testing.T) {
 		`{"smart_status":{"passed":true},"nvme_self_test_log":{"current_self_test_operation":{"value":1}}}`,
 	} {
 		report, ok := parseSmartctl([]byte(data), nil)
-		if !ok || !report.SelfTestRunning { t.Fatalf("active self-test not recognized: %+v", report) }
+		if !ok || !report.SelfTestRunning {
+			t.Fatalf("active self-test not recognized: %+v", report)
+		}
 	}
 }

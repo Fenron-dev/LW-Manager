@@ -12,11 +12,11 @@ import (
 )
 
 type HealthReport struct {
-	Status    string `json:"status"`
-	Message   string `json:"message"`
-	Source    string `json:"source"`
-	CheckedAt string `json:"checkedAt"`
-	SelfTestRunning bool `json:"selfTestRunning"`
+	Status          string `json:"status"`
+	Message         string `json:"message"`
+	Source          string `json:"source"`
+	CheckedAt       string `json:"checkedAt"`
+	SelfTestRunning bool   `json:"selfTestRunning"`
 }
 
 func unavailable(message string) HealthReport {
@@ -96,7 +96,9 @@ func parseSmartctl(output []byte, commandErr error) (HealthReport, bool) {
 		} `json:"smartctl"`
 		ATAData struct {
 			SelfTest struct {
-				Status struct { Value int `json:"value"` } `json:"status"`
+				Status struct {
+					Value int `json:"value"`
+				} `json:"status"`
 			} `json:"self_test"`
 		} `json:"ata_smart_data"`
 		ATA struct {
@@ -134,7 +136,7 @@ func parseSmartctl(output []byte, commandErr error) (HealthReport, bool) {
 		return HealthReport{}, false
 	}
 	report := HealthReport{Status: "ok", Message: "SMART meldet keinen kritischen Zustand", Source: "smartctl", CheckedAt: time.Now().Format(time.RFC3339)}
-	report.SelfTestRunning = payload.ATAData.SelfTest.Status.Value >> 4 == 15 || payload.NVMeSelfTest.CurrentOperation.Value != 0
+	report.SelfTestRunning = payload.ATAData.SelfTest.Status.Value>>4 == 15 || payload.NVMeSelfTest.CurrentOperation.Value != 0
 	if code&0x18 != 0 || payload.SmartStatus.Passed != nil && !*payload.SmartStatus.Passed || payload.NVMe.CriticalWarning != nil && *payload.NVMe.CriticalWarning != 0 {
 		report.Status, report.Message = "critical", "SMART meldet einen kritischen Laufwerkszustand"
 	} else if code&0xe0 != 0 {
