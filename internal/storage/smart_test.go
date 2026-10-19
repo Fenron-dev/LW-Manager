@@ -36,3 +36,13 @@ func TestParseSmartctlHealth(t *testing.T) {
 		t.Fatalf("NVMe self-test report=%+v found=%t", report, found)
 	}
 }
+
+func TestParseSmartctlReportsRunningSelfTests(t *testing.T) {
+	for _, data := range []string{
+		`{"smart_status":{"passed":true},"ata_smart_data":{"self_test":{"status":{"value":249}}}}`,
+		`{"smart_status":{"passed":true},"nvme_self_test_log":{"current_self_test_operation":{"value":1}}}`,
+	} {
+		report, ok := parseSmartctl([]byte(data), nil)
+		if !ok || !report.SelfTestRunning { t.Fatalf("active self-test not recognized: %+v", report) }
+	}
+}

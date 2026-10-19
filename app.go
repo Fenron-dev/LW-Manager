@@ -34,7 +34,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.0.7-dev"
+var appVersion = "1.0.8-dev"
 
 type App struct {
 	ctx        context.Context
@@ -46,6 +46,10 @@ type App struct {
 	settings   appconfig.Settings
 	catalog    *database.Catalog
 	initErr    error
+	autoCancel context.CancelFunc
+	autoDone   chan struct{}
+	autoMu     sync.RWMutex
+	autoStatus AutoImportStatus
 }
 
 type AppInfo struct {
@@ -82,6 +86,9 @@ type ScanResult struct {
 	IssuesTruncated bool            `json:"issuesTruncated"`
 	LogPath         string          `json:"logPath"`
 	Message         string          `json:"message"`
+	Health          storage.HealthReport `json:"health"`
+	DriveID         int64 `json:"driveId"`
+	Changes         database.ScanChanges `json:"changes"`
 }
 
 type ScanDiagnostic struct {
@@ -233,9 +240,16 @@ func (a *App) Startup(ctx context.Context) {
 		return
 	}
 	a.catalog, a.initErr = database.Open(dbPath)
+	if a.initErr == nil {
+		a.startAutoImport()
+	}
 }
 
 func (a *App) Shutdown(context.Context) {
+	if a.autoCancel != nil {
+		a.autoCancel()
+		<-a.autoDone
+	}
 	if a.catalog != nil {
 		_ = a.catalog.Close()
 	}
@@ -315,6 +329,9 @@ func (a *App) SelectVault(create bool) (VaultSwitchResult, error) {
 	a.settingsMu.Unlock()
 	if old != nil {
 		_ = old.Close()
+	}
+	if a.autoCancel == nil {
+		a.startAutoImport()
 	}
 	return VaultSwitchResult{Path: root}, nil
 }
@@ -885,6 +902,10 @@ func (a *App) EjectVolume(path, uuid string) error {
 		return fmt.Errorf("während eines Scans kann kein Datenträger ausgeworfen werden")
 	}
 	defer a.scanMu.Unlock()
+	return a.ejectVolumeLocked(path, uuid)
+}
+
+func (a *App) ejectVolumeLocked(path, uuid string) error {
 	volumes, err := storage.ListVolumes()
 	if err != nil {
 		return fmt.Errorf("angeschlossene Datenträger erkennen: %w", err)
@@ -894,6 +915,10 @@ func (a *App) EjectVolume(path, uuid string) error {
 		return err
 	}
 	candidate := filepath.Clean(volume.Path)
+	executable, _ := os.Executable()
+	if volumeContainsPath(candidate, executable) {
+		return fmt.Errorf("der Datenträger enthält die laufende App und kann nicht ausgeworfen werden")
+	}
 	root := filepath.Clean(a.root)
 	if goruntime.GOOS == "windows" {
 		if strings.HasPrefix(strings.ToLower(root), strings.ToLower(candidate)) {
@@ -2515,8 +2540,14 @@ func (a *App) scanPath(selected string) (ScanResult, error) {
 }
 
 func (a *App) scanPathWithIdentity(selected string, detected storage.Identity) (ScanResult, error) {
-	a.scanMu.Lock()
+	if !a.scanMu.TryLock() {
+		return ScanResult{}, fmt.Errorf("ein anderer Scan oder eine Datenträgeroperation läuft bereits")
+	}
 	defer a.scanMu.Unlock()
+	return a.scanPathLocked(a.ctx, selected, detected, false)
+}
+
+func (a *App) scanPathLocked(ctx context.Context, selected string, detected storage.Identity, forceSMART bool) (ScanResult, error) {
 	started := time.Now()
 	settings := a.currentSettings()
 	identity := detected
@@ -2552,7 +2583,7 @@ func (a *App) scanPathWithIdentity(selected string, detected storage.Identity) (
 			storedTextBytes = 0
 		}
 	}
-	report, err := scanner.Scan(a.ctx, selected, a.root, scanner.ImageAnalysisOptions{
+	report, err := scanner.Scan(ctx, selected, a.root, scanner.ImageAnalysisOptions{
 		Enabled: settings.ImageAnalysisEnabled, JPEG: settings.ImageJPEGEnabled, PNG: settings.ImagePNGEnabled, GIF: settings.ImageGIFEnabled, HEIC: settings.ImageHEICEnabled,
 		PerFileBytes: int64(settings.ImageHeaderMB) << 20, TotalBytes: int64(settings.ImageScanBudgetMB) << 20,
 		PerFileUnlimited: settings.ImageHeaderUnlimited, TotalUnlimited: settings.ImageScanBudgetUnlimited,
@@ -2580,24 +2611,32 @@ func (a *App) scanPathWithIdentity(selected string, detected storage.Identity) (
 		label = identity.Label
 	}
 	wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "save", "files": len(report.Files), "path": selected, "profile": profileName})
+	changes, err := a.catalog.ScanChanges(identity.UUID, selected, report.Files)
+	if err != nil { return ScanResult{}, fmt.Errorf("Änderungen bestimmen: %w", err) }
 	if err := a.catalog.ReplaceDriveScan(database.DriveScan{Path: selected, Label: label, Files: report.Files, TotalSize: totalSize, UsedSize: usedSize, UUID: identity.UUID, FSType: identity.FSType, Vendor: identity.Vendor, Model: identity.Model, Serial: identity.Serial, DeviceType: identity.DeviceType, Archive: settings.ArchiveEnabled, MaxSnapshots: settings.MaxSnapshots}); err != nil {
 		a.writeScanDiagnostic(ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Error: err.Error()})
 		return ScanResult{}, err
 	}
-	if settings.SmartAutoCheckEnabled {
+	var health storage.HealthReport
+	if settings.SmartAutoCheckEnabled || forceSMART {
 		if id, idErr := a.catalog.DriveIDForIdentity(identity.UUID, selected); idErr == nil {
 			wailsruntime.EventsEmit(a.ctx, "scan:progress", map[string]any{"phase": "health", "files": len(report.Files), "path": selected, "profile": profileName})
-			var health storage.HealthReport
 			if healthErr := externalHealthPath(selected, identity.UUID); healthErr == nil {
 				health = storage.CheckHealth(selected)
 			} else {
 				health = storage.HealthReport{Status: "unavailable", Message: healthErr.Error(), Source: "SMART", CheckedAt: time.Now().Format(time.RFC3339)}
 			}
-			_ = a.catalog.UpdateDriveHealth(id, health.Status, health.Message, health.Source, health.CheckedAt)
+			if err := a.catalog.UpdateDriveHealth(id, health.Status, health.Message, health.Source, health.CheckedAt); err != nil {
+				return ScanResult{}, fmt.Errorf("SMART-Befund speichern: %w", err)
+			}
 		}
 	}
 	diagnostic := ScanDiagnostic{StartedAt: started, Drive: selected, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated}
 	result := ScanResult{Drive: selected, DriveUUID: identity.UUID, Profile: profileName, Files: len(report.Files), Bytes: report.Bytes, Skipped: report.Skipped, Excluded: report.Excluded, Issues: report.Issues, IssuesTruncated: report.IssuesTruncated, Message: "Scan erfolgreich gespeichert"}
+	result.Health = health
+	result.Changes = changes
+	result.DriveID, err = a.catalog.DriveIDForIdentity(identity.UUID, selected)
+	if err != nil { return ScanResult{}, fmt.Errorf("gespeicherten Datenträger bestimmen: %w", err) }
 	result.LogPath = a.writeScanDiagnostic(diagnostic)
 	wailsruntime.EventsEmit(a.ctx, "scan:complete", result)
 	return result, nil

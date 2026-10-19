@@ -16,6 +16,7 @@ type HealthReport struct {
 	Message   string `json:"message"`
 	Source    string `json:"source"`
 	CheckedAt string `json:"checkedAt"`
+	SelfTestRunning bool `json:"selfTestRunning"`
 }
 
 func unavailable(message string) HealthReport {
@@ -28,13 +29,18 @@ func CheckHealth(path string) HealthReport {
 	device, err := smartDevice(ctx, path)
 	if err == nil && device != "" {
 		if tool := smartctlPath(); tool != "" {
-			output, commandErr := smartCommand(ctx, tool, "-j", "-H", "-A", "-l", "selftest", device).Output()
+			output, commandErr := smartCommand(ctx, tool, "-j", "-H", "-A", "-c", "-l", "selftest", device).Output()
 			if report, ok := parseSmartctl(output, commandErr); ok {
 				return report
 			}
 		}
 	}
 	return nativeHealth(ctx, path)
+}
+
+// PhysicalDevice identifies a mounted volume's parent disk without requiring smartctl.
+func PhysicalDevice(ctx context.Context, path string) (string, error) {
+	return smartDevice(ctx, path)
 }
 
 func StartShortSelfTest(path string) (string, error) {
@@ -88,6 +94,11 @@ func parseSmartctl(output []byte, commandErr error) (HealthReport, bool) {
 		Smartctl struct {
 			ExitStatus int `json:"exit_status"`
 		} `json:"smartctl"`
+		ATAData struct {
+			SelfTest struct {
+				Status struct { Value int `json:"value"` } `json:"status"`
+			} `json:"self_test"`
+		} `json:"ata_smart_data"`
 		ATA struct {
 			Standard struct {
 				Table []struct {
@@ -123,6 +134,7 @@ func parseSmartctl(output []byte, commandErr error) (HealthReport, bool) {
 		return HealthReport{}, false
 	}
 	report := HealthReport{Status: "ok", Message: "SMART meldet keinen kritischen Zustand", Source: "smartctl", CheckedAt: time.Now().Format(time.RFC3339)}
+	report.SelfTestRunning = payload.ATAData.SelfTest.Status.Value >> 4 == 15 || payload.NVMeSelfTest.CurrentOperation.Value != 0
 	if code&0x18 != 0 || payload.SmartStatus.Passed != nil && !*payload.SmartStatus.Passed || payload.NVMe.CriticalWarning != nil && *payload.NVMe.CriticalWarning != 0 {
 		report.Status, report.Message = "critical", "SMART meldet einen kritischen Laufwerkszustand"
 	} else if code&0xe0 != 0 {
@@ -137,6 +149,7 @@ func parseSmartctl(output []byte, commandErr error) (HealthReport, bool) {
 			}
 			report.Message += "; letzter Selbsttest fehlgeschlagen"
 		case state == 15:
+			report.SelfTestRunning = true
 			report.Message += "; Selbsttest läuft"
 		case state == 0:
 			report.Message += "; letzter Selbsttest erfolgreich"

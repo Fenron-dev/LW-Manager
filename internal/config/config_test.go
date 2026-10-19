@@ -66,12 +66,18 @@ func TestLoadCreatesPortableDefaults(t *testing.T) {
 	if !settings.SmartAutoCheckEnabled {
 		t.Fatal("automatic SMART check should be enabled by default")
 	}
+	if settings.AutoImportEnabled || !settings.AutoImportEject || !settings.AutoImportRequireSMART {
+		t.Fatal("USB dock automation must be opt-in with safe ejection and SMART required")
+	}
+	settings.AutoImportEnabled = true
+	settings.AutoImportRequireSMART = false
 	settings.MaxSnapshots = 3
 	settings.SmartAutoCheckEnabled = false
 	if err := Save(path, settings); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := Load(path)
+	if err == nil && (!loaded.AutoImportEnabled || loaded.AutoImportRequireSMART) { t.Fatal("automatic import options were not saved") }
 	if err != nil || loaded.MaxSnapshots != 3 || loaded.SmartAutoCheckEnabled {
 		t.Fatalf("reloaded settings: %+v, %v", loaded, err)
 	}

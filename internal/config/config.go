@@ -35,6 +35,9 @@ type DriveStatus struct {
 type Settings struct {
 	Version                          int           `json:"version"`
 	VolumeDetectionEnabled           bool          `json:"volumeDetectionEnabled"`
+	AutoImportEnabled                bool          `json:"autoImportEnabled"`
+	AutoImportEject                  bool          `json:"autoImportEject"`
+	AutoImportRequireSMART           bool          `json:"autoImportRequireSMART"`
 	BackupEnabled                    bool          `json:"backupEnabled"`
 	BackupIncludeThumbnails          bool          `json:"backupIncludeThumbnails"`
 	BackupFileMB                     int           `json:"backupFileMB"`
@@ -135,7 +138,7 @@ type Settings struct {
 
 func Defaults() Settings {
 	return Settings{
-		Version: 23, VolumeDetectionEnabled: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
+		Version: 24, VolumeDetectionEnabled: true, AutoImportEject: true, AutoImportRequireSMART: true, BackupEnabled: true, BackupFileMB: 1024, BackupMaxMB: 2048, ArchiveEnabled: true, MaxSnapshots: 10,
 		DriveStatuses: []DriveStatus{{"ok", "OK"}, {"in-pruefung", "In Prüfung"}, {"fehlerhaft", "Fehlerhaft"}, {"defekt", "Defekt"}, {"verliehen", "Verliehen"}, {"vermisst", "Vermisst"}, {"entsorgt", "Entsorgt"}}, SmartAutoCheckEnabled: true,
 		ScanDiagnosticsEnabled: true, ScanDiagnosticFileMB: 2, ScanDiagnosticsTotalMB: 50,
 		ScanExcludeSystem: true, ScanExcludeDevelopment: true, ScanExcludedPatterns: []string{}, ScanProfiles: []ScanProfile{},
@@ -181,7 +184,7 @@ func Save(path string, settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-	settings.Version = 23
+	settings.Version = 24
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err

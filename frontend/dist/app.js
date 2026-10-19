@@ -185,6 +185,9 @@ async function showSettings() {
     $('#vault-location-path').textContent = (await window.go.main.App.GetAppInfo()).vaultRoot;
     $('#setting-volume-detection').checked = settings.volumeDetectionEnabled;
     $('#setting-smart-auto-check').checked = settings.smartAutoCheckEnabled;
+    $('#setting-auto-import').checked = settings.autoImportEnabled;
+    $('#setting-auto-import-eject').checked = settings.autoImportEject;
+    $('#setting-auto-import-require-smart').checked = settings.autoImportRequireSMART;
     $('#setting-ai-enabled').checked = settings.aiEnabled;
     $('#setting-ai-provider').value = settings.aiProvider;
     $('#setting-ai-endpoint').value = settings.aiEndpoint;
@@ -522,10 +525,13 @@ async function saveSettings() {
   let saved = false;
   try {
     await window.go.main.App.SaveSettings({
-      version: 23,
+      version: 24,
       driveStatuses: driveStatuses.map((status) => ({id: status.id, name: status.name.trim()})),
       volumeDetectionEnabled: $('#setting-volume-detection').checked,
       smartAutoCheckEnabled: $('#setting-smart-auto-check').checked,
+      autoImportEnabled: $('#setting-auto-import').checked,
+      autoImportEject: $('#setting-auto-import-eject').checked,
+      autoImportRequireSMART: $('#setting-auto-import-require-smart').checked,
       aiEnabled: $('#setting-ai-enabled').checked,
       aiProvider: $('#setting-ai-provider').value,
       aiEndpoint: $('#setting-ai-endpoint').value.trim(),
@@ -728,6 +734,10 @@ async function restoreBackup() {
 }
 
 function syncSettingsControls() {
+  const autoEnabled = $('#setting-volume-detection').checked && $('#setting-auto-import').checked;
+  $('#setting-auto-import').disabled = !$('#setting-volume-detection').checked;
+  $('#setting-auto-import-eject').disabled = !autoEnabled;
+  $('#setting-auto-import-require-smart').disabled = !autoEnabled || !$('#setting-auto-import-eject').checked;
   const aiEnabled = $('#setting-ai-enabled').checked;
   const openRouter = $('#setting-ai-provider').value === 'openrouter';
   ['#setting-ai-provider', '#setting-ai-endpoint', '#setting-ai-model', '#setting-ai-timeout', '#setting-ai-file-unlimited', '#setting-ai-total-unlimited', '#setting-ai-vision-enabled'].forEach((selector) => { $(selector).disabled = !aiEnabled; });
@@ -853,7 +863,7 @@ async function loadInfo() {
     $('#drive-count').textContent = info.driveCount.toLocaleString('de-DE');
     $('#file-caption').textContent = info.fileCount ? 'Metadaten im portablen Katalog' : 'Noch kein Scan durchgeführt';
     $('#drive-caption').textContent = info.driveCount ? 'Katalogisierte Quellen' : 'Keine Medien katalogisiert';
-    scanButton.disabled = !info.ready;
+    scanButton.disabled = !info.ready || automaticImportBusy;
   } catch (error) {
     $('#status').textContent = 'Backend nicht erreichbar';
     $('#message').textContent = String(error);
@@ -882,17 +892,14 @@ async function runScan(scanAction, preparingMessage) {
       const drive = scannedUUID
         ? drives.find((item) => String(item.uuid || '').toLowerCase().replace(/^volume:/, '') === scannedUUID)
         : drives.find((item) => String(item.path || '').replace(/[\\/]+$/, '').toLowerCase() === String(result.drive || '').replace(/[\\/]+$/, '').toLowerCase());
-      if (drive) {
-        try { await openDriveDialog(drive); }
-        catch (error) { $('#scan-detail').textContent += ` · Bearbeitung konnte nicht geöffnet werden: ${error}`; }
-      }
+      if (drive) queueScanNotice(result, 'Scan erfolgreich gespeichert.');
     }
   } catch (error) {
     $('#scan-title').textContent = 'Scan fehlgeschlagen';
     $('#scan-detail').textContent = String(error);
   } finally {
     $('#progress').classList.remove('active');
-    scanButton.disabled = false;
+    scanButton.disabled = automaticImportBusy;
   }
 }
 
@@ -2126,6 +2133,81 @@ async function setDuplicatePreference(group, file) {
   }
 }
 
+let automaticImportBusy = false;
+const pendingScanNotices = [];
+const shownAutomaticNotices = new Set();
+let openingScanNotice = false;
+function scanChangesText(result) {
+  const changes = result.changes || {};
+  return `${(changes.added || 0).toLocaleString('de-DE')} neue Dateien (${formatBytes(changes.addedBytes || 0)}), ${(changes.modified || 0).toLocaleString('de-DE')} geändert, ${(changes.removed || 0).toLocaleString('de-DE')} entfernt, ${(changes.unchanged || 0).toLocaleString('de-DE')} unverändert. Änderungen beruhen auf Pfad, Größe und Änderungsdatum.`;
+}
+function queueScanNotice(result, message) {
+  pendingScanNotices.push({result, message});
+  showNextScanNotice();
+}
+async function showNextScanNotice() {
+  if (openingScanNotice || !pendingScanNotices.length || document.querySelector('dialog[open]')) return;
+  openingScanNotice = true;
+  const notice = pendingScanNotices.shift();
+  try {
+    const drives = await window.go.main.App.GetDrives();
+    const drive = drives.find((item) => item.id === notice.result.driveId);
+    if (notice.result.changes?.newDrive && drive) {
+      await openDriveDialog(drive);
+      $('#drive-save-status').textContent = `Neu eingelesen. ${notice.message}`;
+    } else {
+      let dialog = $('#scan-result-dialog');
+      if (!dialog) {
+        dialog = document.createElement('dialog'); dialog.id = 'scan-result-dialog'; dialog.className = 'modal';
+        const form = document.createElement('form'); form.method = 'dialog';
+        const title = document.createElement('h2'); title.textContent = 'Datenträger aktualisiert';
+        const name = document.createElement('h3'); name.className = 'scan-result-name';
+        const summary = document.createElement('p'); summary.className = 'scan-result-summary';
+        const message = document.createElement('p'); message.className = 'scan-result-message';
+        const close = document.createElement('button'); close.textContent = 'Schließen';
+        form.append(title, name, summary, message, close); dialog.append(form); document.body.append(dialog);
+      }
+      dialog.querySelector('.scan-result-name').textContent = drive ? driveName(drive) : notice.result.drive;
+      dialog.querySelector('.scan-result-summary').textContent = scanChangesText(notice.result);
+      dialog.querySelector('.scan-result-message').textContent = notice.message;
+      dialog.showModal();
+    }
+  } catch (error) {
+    $('#scan-detail').textContent += ` · Ergebnisfenster konnte nicht geöffnet werden: ${error}`;
+  } finally { openingScanNotice = false; }
+}
+document.addEventListener('close', () => setTimeout(showNextScanNotice, 0), true);
+function renderAutoImportStatus(status) {
+  let panel = $('#auto-import-status');
+  if (!panel) {
+    panel = document.createElement('div'); panel.id = 'auto-import-status'; panel.className = 'auto-import-status hidden'; panel.setAttribute('role', 'status'); panel.setAttribute('aria-live', 'polite');
+    $('main').prepend(panel);
+  }
+  if (!status?.phase) return;
+  automaticImportBusy = ['scanning', 'ejecting'].includes(status.phase);
+  panel.classList.remove('hidden'); panel.dataset.phase = status.phase;
+  panel.textContent = `${status.label || status.path || 'USB-Dock-Automatik'}: ${status.message}`;
+  scanButton.disabled = automaticImportBusy;
+  $('#progress').classList.toggle('active', automaticImportBusy);
+  if (!automaticImportBusy) {
+    $('#scan-title').textContent = status.phase === 'ejected' ? 'Sicher ausgeworfen' : status.phase === 'error' ? 'Automatik benötigt Aufmerksamkeit' : 'Automatischer Scan abgeschlossen';
+    $('#scan-detail').textContent = status.message;
+    if (status.result?.drive) {
+      currentScanDiagnostic = status.result;
+      $('#scan-report-button').classList.toggle('hidden', !status.result.logPath && !status.result.issues?.length);
+      const noticeKey = `${status.updatedAt}|${status.path}|${status.phase}`;
+      if (!shownAutomaticNotices.has(noticeKey)) {
+        shownAutomaticNotices.add(noticeKey);
+        queueScanNotice(status.result, status.message);
+      }
+    }
+    extensionsLoaded = false;
+    Promise.all([loadInfo(), loadDrives()]).then(() => {
+      if (!$('#library-view').classList.contains('hidden')) loadLibrary(1);
+    }).catch(() => {});
+  }
+}
+window.runtime.EventsOn('auto-import:status', renderAutoImportStatus);
 window.runtime.EventsOn('scan:progress', (event) => {
   $('#scan-title').textContent = event.phase === 'prepare' ? `Scanprofil: ${event.profile || 'Globale Einstellungen'}` : event.phase === 'save' ? 'Katalog wird gespeichert …' : event.phase === 'health' ? 'SMART-Gesundheit wird geprüft …' : `${event.files.toLocaleString('de-DE')} Dateien gefunden`;
   $('#scan-detail').textContent = event.phase === 'prepare' ? event.path : `${event.path}${event.profile ? ` · Profil: ${event.profile}` : ''}`;
@@ -2157,6 +2239,7 @@ $('#nav-drives').addEventListener('click', showDrives);
 $('#nav-archive').addEventListener('click', showArchive);
 $('#nav-settings').addEventListener('click', showSettings);
 $('#save-settings-button').addEventListener('click', saveSettings);
+['#setting-volume-detection', '#setting-auto-import', '#setting-auto-import-eject'].forEach((selector) => $(selector).addEventListener('change', syncSettingsControls));
 $('#add-drive-status-button').addEventListener('click', () => {
   driveStatuses.push({id: `status-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: 'Neuer Status'});
   renderDriveStatuses();
@@ -2230,4 +2313,4 @@ $('#compare-list-mode').addEventListener('click',()=>setComparisonMode('list'));
 $('#compare-tree-mode').addEventListener('click',()=>setComparisonMode('tree'));
 $('#export-comparison-json').addEventListener('click', exportComparisonJSON);
 $('#export-comparison-html').addEventListener('click', exportComparisonHTML);
-loadInfo().then(loadDrives);
+loadInfo().then(loadDrives).then(async () => renderAutoImportStatus(await window.go.main.App.GetAutoImportStatus()));
